@@ -766,6 +766,50 @@ Observations for the author, not defects.
   10/11 recall while dropping the 4 caution entries is untested.
 - **Chunking for long videos**, for the ~5-minute ceiling.
 
+## Dependency risk, and what to change when this is fixed
+
+**This example depends on a blueprint that should not exist much longer.**
+`blp_76kyqm4vjp9pt8tvfz8tks7x6t` is `is_active: false` — a superseded version kept
+alive only because it still resolves by id. Someone tidying up old blueprints would
+be entirely justified in deleting it, and nothing would warn them that an example
+repo points at it.
+
+If that happens before `max_new_tokens` is exposed on the active blueprint:
+
+- `python3 run_mga_example.py` **breaks** — the default target disappears.
+- `python3 run_mga_example.py --blueprint mga` still works but yields the truncated
+  6-step manual, i.e. the example demonstrates the defect instead of the capability.
+- The committed outputs in [`reference/`](reference) become **the only record of
+  what MGA produced under a working configuration.** That is a large part of why
+  they are checked in rather than regenerated on demand, and why `evaluate.py` scores
+  files rather than requiring a live run.
+
+So treat `reference/` as evidence, not as a cache.
+
+### Migration checklist
+
+When `max_new_tokens` (and optionally `prompt`) are available on the active `mga`
+blueprint, this repo should be updated as follows. Nothing here is guesswork — the
+values are already parameterised, so it is a small change.
+
+| # | Change | Where |
+|---|---|---|
+| 1 | Point the example at the active blueprint | `run_mga_example.py` — `BLUEPRINT_DEFAULT = BLUEPRINT_ACTIVE` (line ~79) |
+| 2 | Update `BLUEPRINT_ACTIVE` if a *new* version was registered rather than the current one edited | `run_mga_example.py` ~65, `repro_truncation.py` ~56 |
+| 3 | Re-run the example and update the expected digest | `run_mga_example.py` — `KNOWN_MD5` (~94) |
+| 4 | Keep `--max-new-tokens 2048` as the default only if the blueprint's own default is still 256 | `run_mga_example.py` ~273 |
+| 5 | Drop `--prompt` from the defaults **if** `prompt` is still not exposed; keep it if it is | `run_mga_example.py` ~276 |
+| 6 | Delete the "defaults are pinned to a superseded blueprint" callout | [Stage 4](#stage-4--create-the-agent-and-run-it) |
+| 7 | Re-frame the headline: the defect becomes historical, and A/B/C becomes a before/after rather than a workaround | [Quick start](#quick-start--try-the-agent-in-one-command), [Stage 3a](#3a-the-token-cap-is-the-whole-story) |
+| 8 | Delete this section | here |
+
+**What should *not* change:** `repro_truncation.py` keeps defaulting to the active
+blueprint and keeps its three committed baselines. Once the fix lands it will start
+reporting `0/3 symptoms confirmed` against a live run, which is exactly what you want
+— it becomes the regression test proving the fix works. Its wired-value preflight
+already flips from `NOT WIRED` to `honoured` with no code change, because it reads
+the blueprint document rather than hardcoding key names.
+
 ## Cleanup
 
 Dev has **one GPU** and serializes these jobs, so an abandoned run blocks everyone.
