@@ -3,6 +3,15 @@
 .env.*
 !.env.example
 
+# Videos are copyrighted by their uploaders and must never be committed.
+# data/ is ignored wholesale; *.mp4 is a backstop for a stray download.
+data/
+*.mp4
+*.mkv
+*.webm
+repro-A.jsonl
+repro-B.jsonl
+
 # Source video and any derived clips. Large, and licensed by whoever published
 # them — see the README's Data attribution section before redistributing.
 data/raw/

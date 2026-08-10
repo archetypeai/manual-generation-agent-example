@@ -59,7 +59,7 @@ import uuid
 # videos over ~5 minutes, and this one is 58% of that ceiling. Source resolution
 # barely matters because the pipeline resizes every frame to 224x224.
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
-VIDEO_PATH = "tire_i2JWkDyg26A.mp4"
+VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
 BLUEPRINT = "mga"
 # What this script produced on dev at max_frames=64. Generation is deterministic,
 # so a matching digest means you reproduced the run exactly.
@@ -115,7 +115,8 @@ def download_video(path: str) -> None:
                for p in os.environ.get("PATH", "").split(os.pathsep)):
         sys.exit("yt-dlp not found. Install it, or download the video manually:\n"
                  f"  {VIDEO_URL}\n  and save it as {path}")
-    print(f"downloading {VIDEO_URL} ...")
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    print(f"downloading {VIDEO_URL} -> {path} ...")
     subprocess.run([
         "yt-dlp", "--no-warnings",
         "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -228,7 +229,7 @@ def main() -> None:
                          "reader/preprocessor batch size, so they land in one batch; "
                          "the blueprint default is 16. (default: 64)")
     ap.add_argument("--name", default="MGA CrossTask tire change")
-    ap.add_argument("--output", default="mga-output.jsonl")
+    ap.add_argument("--output", default="data/mga-output.jsonl")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()

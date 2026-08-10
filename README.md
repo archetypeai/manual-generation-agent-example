@@ -85,8 +85,15 @@ minutes**, and this one is 58% of that ceiling. Source resolution is nearly
 irrelevant because the pipeline resizes every frame to 224×224, so 360p is no
 worse than 1080p here — only smaller.
 
-Videos are not committed (`data/` is gitignored); each is copyrighted by its
-uploader. CrossTask distributes annotations and YouTube IDs only.
+`--download` fetches it to **`data/clips/tire_i2JWkDyg26A.mp4`**, creating the
+directory if needed — you do not have to pick a location. Override with
+`--video <path>` if you already have a copy elsewhere. Without `yt-dlp` installed,
+the scripts print the URL and the exact path to save to.
+
+**Videos are never committed.** `data/` is gitignored, with `*.mp4`/`*.mkv`/`*.webm`
+as a backstop against a stray download landing in the repo root. Each video is
+copyrighted by its uploader; CrossTask distributes annotations and YouTube IDs
+only, not the media.
 
 ## What a run produces
 

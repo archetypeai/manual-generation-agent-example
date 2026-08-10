@@ -47,7 +47,7 @@ import urllib.request
 import uuid
 
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
-VIDEO_PATH = "tire_i2JWkDyg26A.mp4"
+VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
 BLUEPRINT = "mga"
 DURATION_S = 173.2
 REFERENCE_MD5 = "080e551a88f0bdcd857e48557366ae60"
@@ -239,19 +239,21 @@ def main() -> None:
         return
 
     if args.download and not os.path.exists(args.video):
-        print(f"downloading {VIDEO_URL} ...")
+        # data/ is gitignored, so the clip cannot be committed by accident.
+        os.makedirs(os.path.dirname(args.video) or ".", exist_ok=True)
+        print(f"downloading {VIDEO_URL} -> {args.video} ...")
         subprocess.run(["yt-dlp", "--no-warnings", "-f",
                         "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                         "--merge-output-format", "mp4", "-o", args.video, VIDEO_URL], check=True)
     if not os.path.exists(args.video):
-        sys.exit(f"no video at {args.video} — pass --download")
+        sys.exit(f"no video at {args.video} — pass --download to fetch it")
 
     print(f"uploading {args.video} ...")
     file_id = upload(args.video)
     print(f"  file_id={file_id}")
 
     base = run_once(file_id, {"max_frames": args.max_frames}, "A (as shipped)",
-                    "repro-A.jsonl")
+                    "data/repro-A.jsonl")
     if not base:
         sys.exit("run A did not complete — see the log output above")
     n = analyse(base)
@@ -260,7 +262,7 @@ def main() -> None:
     if args.ab:
         alt = run_once(file_id,
                        {"max_frames": args.max_frames, "max_new_tokens": 1024},
-                       "B (+ max_new_tokens=1024)", "repro-B.jsonl")
+                       "B (+ max_new_tokens=1024)", "data/repro-B.jsonl")
         if alt:
             da = hashlib.md5(open(base, "rb").read()).hexdigest()
             db = hashlib.md5(open(alt, "rb").read()).hexdigest()
