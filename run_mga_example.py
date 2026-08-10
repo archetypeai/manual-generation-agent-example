@@ -303,24 +303,21 @@ def main() -> None:
             {"type": "file", "id": os.path.basename(args.video), "format": "mp4"}]}}, indent=2))
         return
 
-    if args.download or args.download_only:
-        download_video(args.video)
-    if args.download_only:
-        print(f"video ready at {args.video} "
-              f"({os.path.getsize(args.video) / 1e6:.1f} MB)")
-        return
+    # The video is a single fixed 5.7 MB asset whose URL is baked in, so fetch it
+    # automatically when missing rather than making the caller pass a flag.
     if not os.path.exists(args.video):
-        sys.exit(f"no video at {args.video} — pass --download to fetch it")
+        download_video(args.video)
+    else:
+        print(f"using {args.video} "
+              f"({os.path.getsize(args.video) / 1e6:.1f} MB)")
+    if args.download_only:
+        return
 
-    print(f"uploading {args.video} ...")
-    file_id = upload(args.video)
-
-    # No `artifacts` map: the mga blueprint pins newton-fusion:1.0 and
-    # whisper:large-v3 itself. This is the main shape difference from red/osm,
-    # which require a fitted classifier artifact.
-    # Warn about values this blueprint will silently ignore. A value is only
-    # honoured if it is declared in `values` AND referenced as ${values.<key>} by
-    # some node or connector; the API accepts anything and drops the rest.
+    # Preflight BEFORE uploading: a value the blueprint will silently ignore should
+    # be reported before spending bandwidth and 15 minutes of GPU, not after.
+    # A value is only honoured if it is declared in `values` AND referenced as
+    # ${values.<key>} by some node or connector; the API accepts anything else and
+    # drops it.
     bp = api("GET", f"{endpoint}/agents/blueprints/{args.blueprint}")
     doc = bp["document"]
     wired = json.dumps({"nodes": doc.get("nodes"), "connectors": doc.get("connectors")})
@@ -335,7 +332,16 @@ def main() -> None:
         print(f"  WARNING: {inert} is not wired on this blueprint and will be "
               f"silently ignored.")
 
-    print(f"creating bundle (values={values}) ...")
+    print(f"uploading {args.video} ...")
+    file_id = upload(args.video)
+
+    # No `artifacts` map: the mga blueprint pins newton-fusion:1.0 and
+    # whisper:large-v3 itself — the main shape difference from red/osm, which
+    # require a fitted classifier artifact.
+    shown = dict(values)
+    if "prompt" in shown and len(shown["prompt"]) > 60:
+        shown["prompt"] = shown["prompt"][:57] + "..."
+    print(f"creating bundle (values={json.dumps(shown)}) ...")
     bundle = api("POST", f"{endpoint}/agents/bundles",
                  body={"blueprint": args.blueprint, "name": args.name,
                        "values": values})

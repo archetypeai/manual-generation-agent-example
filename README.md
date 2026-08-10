@@ -626,14 +626,14 @@ with no code change, which makes it a regression test too.
 ### 3. The full ladder
 
 ```sh
-# A — the no-op on the active blueprint
+# A — the shipped defect: 6 steps, 4/11 reference steps, output truncated
 python3 repro_truncation.py --max-new-tokens 1024
 
-# B — 10 steps, 10/11
+# B — budget only:      10 steps, 10/11 reference steps (4/11 at IoU>=0.5)
 python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
     --max-new-tokens 2048
 
-# C — 19 steps, 10/11 (11/11 at IoU>0 before advisories are excluded)
+# C — budget + prompt:  19 steps, 10/11 reference steps (5/11 at IoU>=0.5)
 python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
     --max-new-tokens 2048 \
     --prompt "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
