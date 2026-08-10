@@ -36,6 +36,16 @@ What *is* verified and usable today: a working run path, the real output format,
 exact timestamps, and a set of platform behaviours that cost real time to
 discover.
 
+To reproduce the truncation yourself — instantly, with no API key or GPU:
+
+```sh
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl
+```
+
+That checks the three symptoms against the committed output and prints
+`3/3 symptoms confirmed`. Add `--download` to run it live against the platform,
+or `--ab` to also demonstrate that `max_new_tokens` has no effect.
+
 ## Quick start
 
 ```sh
@@ -111,6 +121,26 @@ alongside a snapshot of the blueprint document that produced it.
 | 3 | start loose | 46.5–63.9 | Use the wrench to loosen the wheel nuts one half to one turn… | 50.0–66.0 | **0.71** |
 | 4 | jack up | 73.8–88.9 | Place the jack under the vehicle's jacking point and raise the car | 66.0–85.0 | 0.49 |
 | 5–11 | unscrew wheel → put things back | 89.0–132.2 | — no prediction — | — | 0.00 |
+
+**IoU** (Intersection over Union) measures how much the predicted and true time
+spans agree: `overlap / total time covered by either`. 1.0 is an exact match, 0.0
+is no overlap, and **0.5 is the conventional threshold for "counts as a correct
+detection"** in temporal action localization. Worked example, step 3:
+
+```
+reference   46.5 ─────────────────────── 63.9        (17.4 s)
+prediction        50.0 ──────────────────────── 66.0 (16.0 s)
+overlap           50.0 ─────────────── 63.9         (13.9 s)
+union       46.5 ────────────────────────── 66.0    (19.5 s)
+                              IoU = 13.9 / 19.5 = 0.71
+```
+
+It penalizes both error directions, which is why it beats comparing midpoints — a
+prediction centred correctly but three times too long would score well on
+midpoint distance. Two caveats: IoU alone does not tell you *which* direction the
+error goes (step 1 is too short, step 2 too long, both score ~0.6), and reference
+intervals here are merged across two annotators, which inflates their duration
+and so slightly deflates every score.
 
 **Recall 4/11 = 36%; mean IoU 0.60 over matched steps, 0.22 over all 11.** Where
 MGA predicts, it is good. It simply stops.
@@ -256,6 +286,7 @@ Observations for the author, not defects.
 
 | Path | What it is |
 |---|---|
+| `repro_truncation.py` | **Minimal reproduction** of the missing predictions for reference steps 5-11. Self-contained (reference intervals embedded); `--analyse` works offline. |
 | `run_mga_example.py` | **Start here.** Single-file, stdlib-only end-to-end run: upload → bundle → run → watch `/logs` → download → print. Verifies the reference digest. |
 | `blueprints/mga-tuned.yaml` | The blueprint that exposes `max_new_tokens` and the instruction. Needs an admin to register. |
 | `reference/` | The committed reference output and a snapshot of the `mga` blueprint document that produced it. |
