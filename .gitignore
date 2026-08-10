@@ -18,8 +18,11 @@ data/raw/
 data/clips/
 
 # Agent run outputs — regenerable, named per-clip at runtime.
-mga-output*.json
-mga-output*.csv
+# Run outputs land at the repo root by default. Anchored with a leading slash so
+# the curated copies under reference/ stay tracked.
+/mga-output*
+/repro*.jsonl
+/*.jsonl
 eval_out/
 eval_out_*/
 
