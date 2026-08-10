@@ -26,11 +26,26 @@ annotated reference steps it emits **6 steps covering 16–85 s**, leaving 51% o
 the video with no output and 7 reference steps entirely uncovered. The last step
 is cut mid-clause.
 
-The cause is an output-token cap that **cannot be changed from a bundle**. See
-[The token cap](#the-token-cap) below. Until `max_new_tokens` is exposed,
-end-to-end quality numbers from this repo describe a truncated agent, so the
-evaluation stage (a step-alignment and temporal-IoU scorer) is deliberately not
-built yet — it would measure the cap, not the model.
+**The cause is confirmed: an output-token cap of 256, and the active blueprint
+does not expose the value that would raise it.** Raising it on a superseded
+version of the same blueprint — changing nothing else, same video, same
+instruction — takes the agent from **4 of 11 reference steps to 10 of 11**:
+
+| | active blueprint (cap 256) | `max_new_tokens: 2048` |
+|---|---|---|
+| Steps emitted | 6 | **10** |
+| Coverage | 16–85 s | **16–120 s** |
+| Reference steps covered | 4 / 11 | **10 / 11** |
+| Final step | cut mid-clause | **ends with a full stop** |
+
+So this is not a model limitation. It is a configuration regression, and it is
+measured rather than inferred — see [The token cap](#the-token-cap) and
+[Proof: raising the cap](#proof-raising-the-cap-recovers-10-of-11-steps).
+
+Until the value is restored on the active blueprint, end-to-end quality numbers
+from a default run describe a truncated agent, so the evaluation stage (a
+step-alignment and temporal-IoU scorer) is not built yet — against a default run
+it would measure the cap, not the model.
 
 What *is* verified and usable today: a working run path, the real output format,
 exact timestamps, and a set of platform behaviours that cost real time to
@@ -299,9 +314,10 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: applicat
 ```
 
 **Diagnosis only.** That blueprint is `is_active: false`, so nothing built on it
-can ship and it may be removed without notice. Its value is evidence: it shows the
-parameters work when a blueprint wires them, which is what makes "restore the nine
-values on the active blueprint" a concrete ask rather than a guess.
+can ship and it may be removed without notice. Its value is evidence, and that
+evidence is now in hand: a run on it with `max_new_tokens: 2048` produced 10 steps
+covering 10 of 11 reference steps, against 6 and 4/11 on the active blueprint. See
+[Proof: raising the cap](#proof-raising-the-cap-recovers-10-of-11-steps).
 
 ### `blueprints/mga-tuned.yaml`
 
@@ -336,6 +352,51 @@ before enabling it.
 > bundle `bnd_3ve9qfkve99e980rd858tm9dfb` returning 404. That was wrong twice
 > over: the 404 came from using the singular `/agents/bundle/{id}` — which 404s
 > for everything — and the bundle in fact returns 200 on `/agents/bundles/{id}`.)
+
+## Proof: raising the cap recovers 10 of 11 steps
+
+One run on the superseded blueprint with `max_new_tokens: 2048` and **everything
+else identical** — same video, same `max_frames: 64`, same `size: 224`, same
+`temperature: 0.0`, and the same instruction, because that blueprint's default
+`prompt` value is character-for-character the string the active blueprint
+hardcodes.
+
+| | baseline (3 runs) | `max_new_tokens: 2048` |
+|---|---|---|
+| Steps emitted | 6 (`step` 0–5) | **10** (`step` 0–9) |
+| Coverage | 16.0–85.0 s | **16.0–120.0 s** |
+| Uncovered tail | 88.2 s (51%) | **53.2 s (31%)** |
+| Reference steps covered | **4 / 11** | **10 / 11** |
+| Words generated | 83 | **152** |
+| Final step | `…and raise the car` (cut) | `…store the tools and flat tire.` |
+| md5 | `080e551a…` | `3b8152e7…` |
+
+Every one of the ten steps terminates cleanly, so **the truncation signature is
+gone** — the model finished rather than being severed. The steps it recovered are
+exactly the ones the baseline missed:
+
+```
+[ 85.0 -  95.0s]  Remove the wheel nuts and take off the flat tire.
+[ 95.0 - 105.0s]  Lift the spare wheel onto the hub, line up the holes, and replace the wheel nuts…
+[105.0 - 112.0s]  Lower the jack until the spare wheel touches the ground, then tighten…
+[112.0 - 120.0s]  Lower the car completely, remove the jack, and store the tools and flat tire.
+```
+
+Only reference step 11 (`put things back`, 120.9–125.6 s) is still missed, and
+only just — the last prediction ends at 120.0 s.
+
+**The binding constraint has moved to the prompt.** It emitted exactly **10**
+steps, which is the ceiling in the instruction (*"10 steps or less"*), not the
+token budget. That is the empirical case for fixing the budget and the
+instruction together: restoring `max_new_tokens` alone leaves the agent pinned at
+whatever step count the hardcoded prompt happens to allow.
+
+Reproduce the comparison offline:
+
+```sh
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl              # 6 steps,  4/11
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64-max_new_tokens2048.jsonl  # 10 steps, 10/11
+```
 
 ## Reproducing the truncation
 
@@ -490,6 +551,9 @@ an explanation, since the committed baseline was produced at 64.
   (keep every frame) were all accepted with `status: ready`. The arithmetic
   ceiling from `preprocessor_max_pixels` (24 Mi at `size: 224`) is 501 frames and
   the API will not enforce it.
+- **The `step` field is 0-based.** A 10-step manual reports `step` 0–9. CrossTask's
+  reference steps are 1-based (1–11), so a scorer that joins them naively is off by
+  one — and it will produce plausible-looking wrong alignments rather than an error.
 - **No progress events during processing.** Between `input_started` and the
   terminal event there are zero log rows across 5–7 minutes — no frame counts, no
   transcript length, no per-node timing. Neither the failure nor the time spent
