@@ -161,6 +161,38 @@ and so slightly deflates every score.
 **Recall 4/11 = 36%; mean IoU 0.60 over matched steps, 0.22 over all 11.** Where
 MGA predicts, it is good. It simply stops.
 
+### `max_frames` changes the words, not the outcome
+
+Running the same video at `max_frames=32` reproduces all three symptoms and,
+tellingly, stops at the same token budget:
+
+| | `max_frames=64` | `max_frames=32` |
+|---|---|---|
+| Steps emitted | 6 | 6 |
+| Coverage | 16.0–85.0 s | 16.0–81.0 s |
+| **Words generated** | **83** | **83** |
+| Est. tokens | ~167 | ~169 |
+| Final step cut at | `…and raise the car` | `…Locate the jacking point under the` |
+| Reference steps missed | 5–11 | 5–11 |
+| md5 | `080e551a…` | `7d3ed9c3…` |
+
+Two entirely different generations — different wording, different boundaries —
+landing on the same word count within two tokens. That is a hard cap.
+
+It also shows **verbosity and coverage trade off directly**: at `mf=32` the
+descriptions are richer ("Stop the car on a firm level surface away from
+traffic", "including the jack and wrench") and coverage is 4 s *shorter*. So
+raising `max_new_tokens` alone is not sufficient — the instruction must also ask
+for brevity per step, or a larger budget buys richer prose instead of more steps.
+That is why [`blueprints/mga-tuned.yaml`](blueprints/mga-tuned.yaml) changes both.
+
+Both outputs are committed under `reference/` so this comparison can be checked
+offline:
+
+```sh
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf32.jsonl
+```
+
 Note that five of the seven missed steps are 2.6–4.6 s long. At `max_frames=64`
 on a 173 s video the sampling interval is 2.7 s, so even with a larger token
 budget the short steps will remain hard; the two long misses (jack down 13.4 s,
@@ -319,7 +351,10 @@ Observations for the author, not defects.
   reference labels) plus temporal IoU, reported against the sampling floor.
   Blocked on the token cap — see Status.
 - **A `max_frames` sweep.** 16 / 32 / 64 / 128 / 256, to measure how sampling
-  density affects localization. Only meaningful once output covers the whole video.
+  density affects localization. Deferred on evidence, not guesswork: 32 vs 64
+  changed the wording but produced the same 6 steps, the same 4 covered reference
+  steps and the same 7 missed, so the sweep cannot measure anything until the
+  token cap is lifted.
 - **Chunking for long videos.** `manual-gen-jos` splits into 90-second
   overlapping chunks with timestamp offsetting and dedup across overlaps. Worth
   deciding whether that belongs in the blueprint rather than in every caller.
