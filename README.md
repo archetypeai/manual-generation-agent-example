@@ -1,16 +1,22 @@
 # Manual Generation Agent — End-to-End Example
 
-An end-to-end example of running the **Manual Generation Agent (MGA)** on the
-Archetype AI Platform (Dev): feed it a procedure video, get back an ordered,
+A realistic, end-to-end walkthrough of running the **Manual Generation Agent (MGA)**
+on the Archetype AI Platform (Dev): feed it a procedure video, get back an ordered,
 timestamped manual, and score it against ground truth.
+
+The scenario: a 2:53 roadside tire-change video with **11 documented reference
+steps**. A developer wants a manual good enough that someone could follow it, and
+wants to know how close the agent gets.
 
 MGA V1 is zero-shot. The design doc states there are no build-time optimization
 steps, and the platform agrees: the `mga` blueprint pins its own models
 (`newton-fusion:1.0` and `whisper:large-v3`), so unlike the
 [RED](https://github.com/archetypeai/rare-event-detection-agent-example) and
 [OSM](https://github.com/archetypeai/operational-state-monitoring-agent-example)
-examples there is **no classifier to fit and no `artifacts` map to pass**. A run
-is upload → bundle → run → download.
+examples there is **no classifier to fit and no `artifacts` map to pass**. That
+removes four of their seven stages — everything between raw data and a fitted
+artifact — and moves the difficulty to two other places: choosing a video the agent
+can handle, and configuring generation.
 
 ```
 video ─► sample frames ─┐
@@ -18,166 +24,182 @@ video ─► sample frames ─┐
         whisper ASR ────┘
 ```
 
-## Headline: MGA works. The shipped configuration is what's broken.
+## Quick start — try the agent in one command
 
-On a 173-second tire-change video with 11 annotated reference steps, the **active
-canonical blueprint** produces 6 steps covering 16–85 s, missing 7 of 11 reference
-steps, with the last step severed mid-clause. That looks like a model limitation.
-It isn't.
+With a dev API key in `.env` — **no `atai_core`, no GPU, no AWS, nothing to fit** —
+run:
 
-The cause is an output budget of **`max_new_tokens: 256`**, hardcoded because the
-active blueprint no longer exposes the value. Raising it — and then lifting the
-step ceiling in the instruction — fixes the agent completely:
+```sh
+python3 run_mga_example.py
+```
+
+It fetches the video, uploads it, creates a bundle, runs the agent, streams the
+audit log, downloads the manual and prints it. **~15 minutes.**
+
+What comes back, and why this example exists:
 
 | | A — active blueprint | B — `max_new_tokens: 2048` | C — B + coverage prompt |
 |---|---|---|---|
 | Steps emitted | 6 | 10 | **19** |
 | Coverage | 16–85 s | 16–120 s | **11–139 s** |
-| Reference steps covered | **4 / 11** | **10 / 11** | 10 / 11 |
+| Reference steps found | **4 / 11** | **10 / 11** | 10 / 11 |
 | …at IoU ≥ 0.5 | 3 / 11 | 4 / 11 | 5 / 11 |
-| Words generated | 83 | 152 | 219 |
 | Final step | cut mid-clause | clean | clean |
 | md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` |
 
-**A is what ships. C is what the model can do.** Everything between them is
-configuration: two values that a superseded version of this same blueprint
-exposed, and the current one doesn't.
-
-Note where the gain actually comes from: **`max_new_tokens` alone takes reference
-recall from 4/11 to 10/11.** The prompt adds breadth — an earlier start, spoken
-safety notes, finer segmentation — but not reference-step recall. And more steps is
-not strictly better by IoU: C's finer segmentation produces shorter spans scored
-against coarse reference intervals, so its mean IoU (0.46) is *lower* than A's 0.60
-across the four steps A found.
-
-Recall here is "some non-advisory prediction overlaps the reference interval". Be
-careful with it: MGA's output tiles the timeline with no gaps, so every reference
-interval necessarily overlaps *something*. An early version of this table claimed
-11/11 for C because a purely temporal match credited *"Do not touch the disc wheels
-or brakes"* as the match for `unscrew wheel`. [`evaluate.py`](evaluate.py) excludes
-advisories from candidacy for that reason, and reports IoU ≥ 0.3 / 0.5 alongside,
-because bare overlap is the most generous reading available.
+**A is what ships. C is what the model can do, and what the command above
+produces.** Everything between them is configuration — two values that a superseded
+version of this blueprint exposed and the current one doesn't. The single largest
+gain is `max_new_tokens` alone: **4/11 → 10/11 reference steps**, prompt untouched.
 
 Run A is confirmed across **three runs on two machines**, byte-identical each time
 (generation is deterministic at `temperature: 0.0`).
+
+Careful with "reference steps found": it means *some non-advisory prediction overlaps
+the reference interval*. MGA tiles the timeline with no gaps, so every interval
+necessarily overlaps something — an early draft of this table claimed 11/11 for C
+because a purely temporal match credited *"Do not touch the disc wheels or brakes"*
+as the match for `unscrew wheel`. [`evaluate.py`](evaluate.py) excludes advisories
+and reports IoU ≥ 0.3 / 0.5 alongside, because bare overlap is the most generous
+reading available. More steps is also not strictly better: C's finer segmentation
+scores a *lower* mean IoU (0.46) than A's 0.60 across the four steps A found.
+
+All three outputs are committed under [`reference/`](reference), so the comparison is
+checkable offline with no API key:
+
+```sh
+python3 evaluate.py --compare reference/*.jsonl
+```
+
+## The end-to-end example, stage by stage
+
+```
+video + reference steps ─> 1 select ──> 2 fetch ──> 3 configure ──> 4 run ──> 5 evaluate
+                          (suitability)  (video +    (blueprint,     (platform)  (offline)
+                                          annotations) values, prompt)
+```
+
+Five stages, not seven. RED and OSM spend stages 2–5 producing a fitted classifier;
+MGA is zero-shot, so there is nothing to fit, no grid to search and no artifact to
+upload. What replaces them is **Stage 3**, where every quality decision in this
+example lives — and where the one real defect sits.
+
+Every stage is a standalone script. Stages 1, 2 and 5 need no API key at all.
+
+| Stage | Script | Needs |
+|---|---|---|
+| 1 Select a video | `evaluate.py --compare` (offline), manual inspection | nothing |
+| 2 Fetch | `run_mga_example.py --download-only` | nothing |
+| 3 Configure | `run_mga_example.py --dry-run` | nothing |
+| 4 Run | `run_mga_example.py` | dev API key |
+| 5 Evaluate | `evaluate.py` | nothing |
+
+## Prerequisites
+
+Notably short compared with RED and OSM: **no `atai_core` checkout, no Omega
+checkpoint, no GPU, no AWS access.** MGA is zero-shot and the blueprint pins its own
+models, so there is nothing to fit and nothing to upload.
+
+- `.env` in the repo root:
+
+  ```
+  ATAI_API_KEY=<dev API key>
+  ATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app
+  ```
+
+- **Python 3** — verified on 3.14. Every script here is **stdlib-only**: no
+  virtualenv, no install step, no `requirements.txt`.
+- **`yt-dlp`** to fetch the video, since CrossTask distributes YouTube IDs rather
+  than media. Optional: the scripts print the URL and target path if it is missing.
+- **`ffmpeg`/`ffprobe`** only if you want to inspect or re-encode a video yourself.
+
+## Stage 1 — Select a video
+
+The first real decision, and the one that wasted the most time here. **MGA fails
+outright on videos longer than about 5 minutes.** A 563 s video at default settings
+ran 5 min 13 s of processing and then died:
+
+```
+ERROR  pipeline execution failed: Newton generation event stream closed
+       without a terminal event
+ERROR  pod.terminated  exit_code=1
+```
+
+Note this is *not* a context limit — at `max_frames: 16` the video occupies 392
+visual tokens, **0.15% of F1-0's 256K window**.
+
+So a video needs three properties, none of which the platform checks for you:
+
+| Requirement | Why |
+|---|---|
+| **Under ~5 minutes** | longer runs fail outright, ~5 min in |
+| **Has an audio track** | `AudioReaderNode` → whisper → `prompt.audio` is half the pipeline; run C's safety notes came from narration alone |
+| **Reference steps, if you want to score it** | otherwise there is nothing to evaluate against |
+
+Filtering CrossTask on duration matters more than it sounds. **At least 26% of its
+annotated videos exceed the 5-minute ceiling** by annotated span alone — a lower
+bound, since 72% of each video is background. Per task it ranges from 8%
+("Make Irish Coffee") to 47% ("Add Oil to Your Car").
+
+This example uses **CrossTask task 40567 "Change a Tire", video
+[`i2JWkDyg26A`](https://www.youtube.com/watch?v=i2JWkDyg26A)** — 173.2 s (58% of the
+ceiling), 640×360, 25 fps, 4,329 frames, with all 11 reference steps annotated across
+28 segments by two independent annotators. It has the densest annotation of the 99
+videos in that task.
+
+Source resolution barely matters: the pipeline resizes every frame to 224×224, so
+360p is no worse than 1080p, only smaller.
 
 **Scope: one video, by design.** This example demonstrates the mechanics and
 characterises a configuration defect; it is not a benchmark. Every figure below is a
 single observation. The 4/11 → 10/11 result is large and has a mechanical
 explanation, so it generalises with some confidence; the IoU figures are much more
-video-specific and should not be quoted as MGA's accuracy.
+video-specific and should not be quoted as MGA's accuracy. If a benchmark is ever
+wanted, `INMUrGdA_RA` (201 s), `0kfJ7Lu4tvo` (222 s) and `Z63ZcJXc29E` (188 s) are
+sub-5-minute videos of the same task with all 11 steps annotated, at ~15 min of GPU
+each.
 
-All three outputs are committed under [`reference/`](reference), so the whole
-comparison is checkable offline with no API key:
-
-```sh
-python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl                       # 3/3 symptoms
-python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64-max_new_tokens2048.jsonl    # 1/3
-python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.jsonl  # 0/3
-```
-
-## Quick start
+## Stage 2 — Fetch the video and reference annotations
 
 ```sh
-# .env in the repo root
-#   ATAI_API_KEY=<dev API key>
-#   ATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app
-
-python3 run_mga_example.py          # fetches the video if needed, then runs
-```
-
-Stdlib only — no virtualenv, no install step. Budget **~15 minutes**: about
-7.5 min of model download and load on *every* run (nothing is cached between
-runs), then roughly 2.5× realtime processing. Dev runs these one at a time.
-
-> ### The defaults are pinned to a superseded blueprint — read this
->
-> `run_mga_example.py` defaults to **`blp_76kyqm4vjp9pt8tvfz8tks7x6t`** with
-> `max_new_tokens: 2048` and a coverage-oriented instruction, because the **active**
-> blueprint caps output at a hardcoded `max_new_tokens: 256` and returns a truncated
-> manual — 6 steps covering half the video. The superseded blueprint exposes the
-> generation parameters, so the example produces a complete manual today.
->
-> **This is a temporary pin.** That blueprint is `is_active: false`: it is not a
-> supported target and could be removed at any time. When the generation parameters
-> are restored on the active blueprint, flip `BLUEPRINT_DEFAULT` back to
-> `BLUEPRINT_ACTIVE` and update `KNOWN_MD5`. Both are marked in the script.
->
-> To see what the shipped configuration does instead:
->
-> ```sh
-> python3 run_mga_example.py --blueprint mga       # the active blueprint, truncated
-> ```
->
-> `--show` recognises both digests and tells you which one you are looking at.
-
-```sh
-python3 run_mga_example.py --dry-run           # print the payloads, call nothing
-python3 run_mga_example.py --blueprint mga     # the active blueprint (truncated output)
-python3 run_mga_example.py --max-frames 32     # a different sampling density
-python3 run_mga_example.py --show reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.jsonl
-```
-
-### The video
-
-[CrossTask](https://github.com/DmZhukov/CrossTask) task 40567 "Change a Tire",
-video [`i2JWkDyg26A`](https://www.youtube.com/watch?v=i2JWkDyg26A) — **173.2 s**,
-640×360, 25 fps, 4,329 frames, with all 11 reference steps annotated across 28
-segments by two independent annotators.
-
-Chosen deliberately: **MGA fails outright on videos longer than about 5 minutes**,
-and this is 58% of that ceiling. Source resolution barely matters because the
-pipeline resizes every frame to 224×224, so 360p is no worse than 1080p — only
-smaller.
-
-Either script fetches it automatically when missing. `--download-only` gets it
-without starting a run, so it works before anyone has an API key:
-
-```sh
-python3 repro_truncation.py --download-only
+python3 run_mga_example.py --download-only
 #   fetching the video (5.7 MB) -> data/clips/tire_i2JWkDyg26A.mp4 ...
 #   video md5 5771f46d637314fdad86d6c4c934dbb5  (matches the reference input)
 ```
 
-The input digest is checked because an output digest only means something if the
-input bytes match. If YouTube offers different formats and the video md5 differs,
-the scripts say so and note that the output digest legitimately will not match.
+No API calls, so this works before anyone has a key. A bare run fetches it
+automatically when missing; `--video <path>` uses a copy you already have.
+
+The input digest is checked because an **output** digest only means something if the
+input bytes match. yt-dlp has been reproducible here (formats 396+140, 5,678,742
+bytes) across two machines, but format selection can drift as YouTube changes what
+it offers — if the video md5 differs the scripts say so, and note that the output
+digest legitimately will not match.
+
+Reference annotations need no download: the 11 intervals are embedded in
+`evaluate.py` and `repro_truncation.py`. For other videos, point `--annotations` at a
+[CrossTask release](https://www.di.ens.fr/~dzhukov/crosstask/crosstask_release.zip);
+its format is `<step>,<start_sec>,<end_sec>` per video.
 
 **Videos are never committed.** `data/` is gitignored, with `*.mp4`/`*.mkv`/`*.webm`
-as a backstop. Each video is copyrighted by its uploader; CrossTask distributes
-annotations and YouTube IDs only, not the media.
+as a backstop. Each video is copyrighted by its uploader.
 
-## What a run produces
+## Stage 3 — Configure the agent
 
-One JSONL record per video:
+This is where MGA's four missing stages went, and where the whole example turns.
+Three values matter, and one of them is broken on the shipped blueprint.
 
-```json
-{"id":"tire_i2JWkDyg26A","results":[
-  {"step":0,"instruction":"Set up a warning triangle and turn on the hazard lights.",
-   "frame_start":400.0,"frame_end":625.0,
-   "timestamp_start":16.0,"timestamp_end":25.0}, …]}
+```sh
+python3 run_mga_example.py --dry-run     # print the exact payload, call nothing
 ```
 
-Four properties, none of them documented in the blueprint:
+| Value | This example uses | Notes |
+|---|---|---|
+| `max_frames` | **64** | blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see below. |
+| `max_new_tokens` | **2048** | the blueprint default is **256**, and the active blueprint does not expose the value. This is the defect. |
+| `prompt` | a coverage instruction | also not exposed on the active blueprint, and genuinely risky — see the parser note in Stage 3c. |
 
-- **Timestamps in seconds come free.** The blueprint exposes only
-  `parser_output_frame_indices`; `timestamp_start`/`timestamp_end` are emitted
-  anyway, so no frames→seconds conversion is needed. `manual-gen-jos` needs a
-  second model pass to get `[MM:SS]` reliably — MGA gets it in one.
-- **Frame indices are SOURCE frames, not sampled frames.** Max observed index
-  2,125 against 4,329 source frames; sampled space would have capped at 63.
-  `frame = timestamp × fps` held exactly on every row of every run.
-- **`step` is 0-based.** A 10-step manual reports `step` 0–9. CrossTask reference
-  steps are 1-based (1–11), so a scorer that joins them naively is off by one —
-  and it produces plausible-looking wrong alignments rather than an error.
-- **The output tiles the timeline contiguously.** Every step's `timestamp_end` is
-  exactly the next step's `timestamp_start`, on integer-second boundaries, in all
-  three runs. **MGA performs segmentation, not event detection.** There is no
-  "nothing happening here" option, so every span must be labelled — which is why
-  a spoken safety caution gets its own step (see
-  [Reading the output as a manual](#reading-the-output-as-a-manual)).
-
-## The token cap
+### 3a. The token cap is the whole story
 
 **The cap is `max_new_tokens: 256`.** Not inferred — it is the documented default
 of a superseded version of this blueprint, annotated there as
@@ -245,7 +267,7 @@ blueprint, and whether they can be restored.**
   *key* `mga` resolves to the active version. Bundles pin `blueprint_id`, so an
   existing bundle keeps working when a new version becomes active.
 
-## Proof: what the model does when the cap is lifted
+### 3b. What the model does when the cap is lifted
 
 `blueprints/mga-tuned.yaml` proposes restoring these values on the active
 blueprint. Until that happens, the superseded blueprint can be targeted by **id**
@@ -260,7 +282,7 @@ python3 run_mga_example.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
 can ship and it may be removed without notice. The scripts print a warning when
 you point them at it.
 
-### Run B — raising the budget alone
+#### Run B — raising the budget alone
 
 `max_new_tokens: 2048`, **everything else identical**: same video, `max_frames: 64`,
 `size: 224`, `temperature: 0.0`, and the same instruction, because that
@@ -283,7 +305,7 @@ steps — the ceiling in the instruction ("10 steps or less"), not the token bud
 Only reference step 11 (`put things back`, 120.9–125.6 s) stayed missed, and only
 just: the last prediction ends at 120.0 s.
 
-### Run C — budget plus a coverage-oriented instruction
+#### Run C — budget plus a coverage-oriented instruction
 
 Same as B, plus `--prompt`:
 
@@ -336,7 +358,7 @@ visible action at all — *"Never put any object or body part under the vehicle 
 using the jack"*, *"Do not touch the disc wheels or brakes as they can be hot"*,
 *"Do not exceed 80 kilometers per hour when driving with a compact spare wheel"*.
 
-## Reading the output as a manual
+### 3c. Reading the output as a manual
 
 **The video contains 11 reference steps; C emitted 19.** That is not
 over-generation in the sense of error. Breaking the 19 down:
@@ -375,7 +397,111 @@ before the step they apply to. If a strict action-only list is wanted, the
 instruction needs to say so — *"List only actions performed; do not list warnings
 or advice as steps"* — which is untested.
 
-## Evaluating against CrossTask
+## Stage 4 — Create the agent and run it
+
+```sh
+python3 run_mga_example.py
+```
+
+Upload → create a bundle → run → stream `/logs` → download → print. **~15 minutes**:
+about 7.5 min of model download and load on *every* run (nothing is cached between
+runs), then roughly 2.5× realtime processing. Dev runs these one at a time.
+
+> ### The defaults are pinned to a superseded blueprint — read this
+>
+> `run_mga_example.py` defaults to **`blp_76kyqm4vjp9pt8tvfz8tks7x6t`** with
+> `max_new_tokens: 2048` and the coverage instruction, because the **active**
+> blueprint caps output at a hardcoded `max_new_tokens: 256` and returns a truncated
+> manual — 6 steps covering half the video. The superseded blueprint exposes the
+> generation parameters, so the example produces a complete manual today.
+>
+> **This is a temporary pin.** That blueprint is `is_active: false`: not a supported
+> target, and removable at any time. When the generation parameters are restored on
+> the active blueprint, flip `BLUEPRINT_DEFAULT` back to `BLUEPRINT_ACTIVE` and
+> update `KNOWN_MD5`. Both are marked in the script.
+>
+> ```sh
+> python3 run_mga_example.py --blueprint mga       # the active blueprint, truncated
+> ```
+>
+> `--show` recognises both digests and tells you which one you are looking at.
+
+Or with raw `curl` — note the four things that will bite you, all covered in
+[Platform behavior worth knowing](#platform-behavior-worth-knowing):
+
+```sh
+# 1. upload — the DECLARED MIME type is enforced, so video/mp4 matters
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
+  -F "file=@data/clips/tire_i2JWkDyg26A.mp4;type=video/mp4" "$ATAI_API_ENDPOINT/v0.5/files"
+
+# 2. bundle — PLURAL /bundles (singular 404s), and NO artifacts map:
+#    the mga blueprint pins newton-fusion and whisper itself
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/bundles" -d '{
+    "blueprint": "blp_76kyqm4vjp9pt8tvfz8tks7x6t",
+    "values": {"max_frames": 64, "max_new_tokens": 2048}
+  }'
+
+# 3. run — returns 202, not 201
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/bundles/$BUNDLE_ID/run" -d '{
+    "connectors": {"source": [{"type": "file", "id": "tire_i2JWkDyg26A.mp4", "format": "mp4"}]}
+  }'
+
+# 4. watch — /logs, NOT /events; and ignore the status field, it lies both ways
+curl -H "Authorization: Bearer $ATAI_API_KEY" \
+  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/logs?limit=500"
+
+# 5. results — the ref is relative, resolves under /v0.5, needs the token
+curl -H "Authorization: Bearer $ATAI_API_KEY" \
+  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/results"
+```
+
+### What a run produces
+
+One JSONL record per video:
+
+```json
+{"id":"tire_i2JWkDyg26A","results":[
+  {"step":0,"instruction":"Set up a warning triangle and turn on the hazard lights.",
+   "frame_start":400.0,"frame_end":625.0,
+   "timestamp_start":16.0,"timestamp_end":25.0}, …]}
+```
+
+Four properties, none of them documented in the blueprint:
+
+- **Timestamps in seconds come free.** The blueprint exposes only
+  `parser_output_frame_indices`; `timestamp_start`/`timestamp_end` are emitted
+  anyway, so no frames→seconds conversion is needed. `manual-gen-jos` needs a
+  second model pass to get `[MM:SS]` reliably — MGA gets it in one.
+- **Frame indices are SOURCE frames, not sampled frames.** Max observed index
+  2,125 against 4,329 source frames; sampled space would have capped at 63.
+  `frame = timestamp × fps` held exactly on every row of every run.
+- **`step` is 0-based.** A 10-step manual reports `step` 0–9. CrossTask reference
+  steps are 1-based (1–11), so a scorer that joins them naively is off by one —
+  and it produces plausible-looking wrong alignments rather than an error.
+- **The output tiles the timeline contiguously.** Every step's `timestamp_end` is
+  exactly the next step's `timestamp_start`, on integer-second boundaries, in all
+  three runs. **MGA performs segmentation, not event detection.** There is no
+  "nothing happening here" option, so every span must be labelled — which is why
+  a spoken safety caution gets its own step (see
+  [Reading the output as a manual](#reading-the-output-as-a-manual)).
+
+## Stage 5 — Evaluate
+
+```sh
+python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.jsonl
+python3 evaluate.py --compare reference/*.jsonl        # the A/B/C ladder
+```
+
+[`evaluate.py`](evaluate.py) is **offline and stdlib-only** — no API key, no network
+— so re-scoring is free and repeatable, which matters because a run happens once but
+you will read its numbers many times.
+
+It deliberately **does not compute precision** against CrossTask. The step list is a
+per-task, wikiHow-derived reference procedure rather than an inventory of the video,
+so real actions it omits would be scored as false positives. Unmatched predictions
+are counted and displayed, never scored. See [3c](#3c-reading-the-output-as-a-manual).
 
 ### Accuracy of run A, where it does predict
 
@@ -507,7 +633,7 @@ python3 repro_truncation.py --max-new-tokens 1024
 python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
     --max-new-tokens 2048
 
-# C — 19 steps, 11/11
+# C — 19 steps, 10/11 (11/11 at IoU>0 before advisories are excluded)
 python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
     --max-new-tokens 2048 \
     --prompt "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
@@ -637,8 +763,30 @@ Observations for the author, not defects.
   produced the same 6 steps and the same coverage, so it cannot measure anything
   until the cap is lifted.
 - **A precision-oriented prompt.** Whether an action-only instruction keeps C's
-  11/11 recall while dropping the 4 caution entries is untested.
+  10/11 recall while dropping the 4 caution entries is untested.
 - **Chunking for long videos**, for the ~5-minute ceiling.
+
+## Cleanup
+
+Dev has **one GPU** and serializes these jobs, so an abandoned run blocks everyone.
+Cancel anything you are not watching:
+
+```sh
+# list non-terminal mga runs
+curl -s -H "Authorization: Bearer $ATAI_API_KEY" \
+  "$ATAI_API_ENDPOINT/agents/instances?limit=100" \
+  | python3 -c 'import sys,json; [print(x["id"], x["status"]) for x in json.load(sys.stdin)["data"] \
+      if x.get("blueprint")=="mga" and x["status"] not in ("completed","failed","canceled")]'
+
+# cancel one
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
+  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/cancel"
+```
+
+Do **not** send `DELETE` to an instance URL expecting a no-op — it returns 204 and
+removes the run. Use `/cancel`.
+
+Bundles are cheap and harmless to leave; runs are not.
 
 ## Data attribution
 
@@ -659,3 +807,4 @@ has since removed, the authors host a
 If you select your own videos, filter for duration: at least 26% of CrossTask
 exceeds the ~5-minute ceiling by annotated span alone, which is a lower bound since
 72% of each video is background.
+
