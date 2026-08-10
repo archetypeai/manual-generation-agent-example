@@ -43,9 +43,15 @@ python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.json
 ```
 
 That checks the three symptoms against the committed output and prints
-`3/3 symptoms confirmed`. Add `--download` to run it live against the platform, or
-`--max-new-tokens 1024` to demonstrate that the value which *should* raise the cap
-has no effect — the run comes back with the committed baseline digest, unchanged.
+`3/3 symptoms confirmed` — no API key, no GPU, no video download.
+
+```sh
+python3 repro_truncation.py                       # reproduce it live on dev (~15 min)
+python3 repro_truncation.py --max-new-tokens 1024 # show that value has no effect (~15 min)
+```
+
+See [Reproducing the truncation](#reproducing-the-truncation) for what each one
+prints and how to read it.
 
 ## Quick start
 
@@ -278,6 +284,116 @@ against the budget and *reduce* the steps that fit.
 > the current one. Prior run outputs are unrecoverable — `/results` returns
 > `Job not found`.
 
+## Reproducing the truncation
+
+[`repro_truncation.py`](repro_truncation.py) isolates the defect and reports each
+symptom as `CONFIRMED` or `NOT REPRODUCED`, so there is no need to eyeball the
+output and know what it should have said. It is single-file and stdlib-only, and
+the 11 reference step intervals are embedded, so **no CrossTask download is
+needed**.
+
+There are three levels, in increasing cost.
+
+### 1. Verify the analysis offline — instant, no API key, no GPU
+
+```sh
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl
+```
+
+This reads the run output committed to this repo, so it proves the finding is
+reproducible from published data before anyone spends GPU time. Abridged output:
+
+```
+  6 steps emitted:
+    [  16.0 -   25.0s]  Set up a warning triangle and turn on the hazard lights.
+    ...
+    [  66.0 -   85.0s]  Place the jack under the vehicle's jacking point and raise the car
+
+  SYMPTOM 1 — coverage stops well before the video ends
+    last prediction ends   : 85.0s
+    video duration         : 173.2s
+    uncovered tail         : 88.2s (51% of the video)
+    => CONFIRMED
+
+  SYMPTOM 2 — reference steps 5-11 get no prediction
+    step  5 unscrew wheel      89.0-91.7    NO PREDICTION
+    ... (steps 6-11 likewise)
+    missed: [5, 6, 7, 8, 9, 10, 11]  (7/11 reference steps)
+    => CONFIRMED (exactly steps 5-11, as filed)
+
+  SYMPTOM 3 — final step is cut mid-clause (the token-cap signature)
+    step 4: ends '.'
+    step 5: ends 'r'  <-- no terminal punctuation
+    => CONFIRMED (all earlier steps terminate cleanly; the last does not)
+
+  generated volume: 6 steps, 83 words, 441 chars ~= 167 tokens
+
+3/3 symptoms confirmed.
+```
+
+Symptom 3 is the one that identifies the *cause*. A model that had finished would
+end with a full stop like the five steps before it; one that ran out of budget
+stops mid-clause. Swap in `reference/mga-output-i2JWkDyg26A-mf32.jsonl` to see the
+same three symptoms from a different generation.
+
+### 2. Reproduce it live against dev — ~15 minutes
+
+```sh
+printf 'ATAI_API_KEY=<dev key>\nATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app\n' > .env
+python3 repro_truncation.py
+```
+
+It fetches the video if missing, uploads, creates the bundle, runs, streams
+`/logs`, downloads the output and analyses it. Every run opens by stating exactly
+what it is sending, so a pasted log is unambiguous:
+
+```
+CONFIGURATION
+  video           data/clips/tire_i2JWkDyg26A.mp4
+  blueprint       mga  (canonical)
+  max_frames      64          (blueprint default is 16; 64 is the reader/preprocessor batch size)
+  max_new_tokens  not sent   (reproduces the as-shipped behaviour; the mga
+                             blueprint exposes no generation parameter at all)
+
+  bundle values sent: {"max_frames": 64}
+```
+
+Because generation is deterministic, a correct reproduction returns the committed
+baseline digest `080e551a88f0bdcd857e48557366ae60` and the analysis is identical
+to level 1.
+
+### 3. Show that `max_new_tokens` has no effect — ~15 minutes
+
+```sh
+python3 repro_truncation.py --max-new-tokens 1024
+```
+
+One run is enough, because the baseline is committed and generation is
+deterministic: if the digest still matches the baseline that omitted the value,
+the value changed nothing.
+
+```
+Did max_new_tokens=1024 change anything?
+  this run   md5 080e551a88f0bdcd857e48557366ae60
+  baseline   md5 080e551a88f0bdcd857e48557366ae60   (no max_new_tokens)
+  => IDENTICAL. max_new_tokens was accepted by the API (HTTP 201, echoed back in
+     the bundle values) and had NO effect.
+```
+
+If a blueprint change later wires the value through, this prints
+`OUTPUTS DIFFER` instead — so it doubles as the regression check for the fix.
+
+### Other flags
+
+```sh
+python3 repro_truncation.py --download-only     # fetch the video, make no API calls
+python3 repro_truncation.py --max-frames 32     # a different sampling density
+python3 repro_truncation.py --video path.mp4    # use your own clip
+```
+
+Note that `--max-frames` other than 64 skips the digest comparison in level 3 with
+an explanation, since the committed baseline was produced at 64.
+
 ## Platform behavior worth knowing
 
 - **The bundle endpoint is plural.** `POST /agents/bundle` → **404**; use
@@ -338,7 +454,7 @@ Observations for the author, not defects.
 
 | Path | What it is |
 |---|---|
-| `repro_truncation.py` | **Minimal reproduction** of the missing predictions for reference steps 5-11. Self-contained (reference intervals embedded); `--analyse` works offline. |
+| `repro_truncation.py` | **Minimal reproduction** of the missing predictions for reference steps 5-11, reporting each symptom as CONFIRMED / NOT REPRODUCED. Self-contained (reference intervals embedded). `--analyse` works offline; `--max-new-tokens 1024` shows that value has no effect. See [Reproducing the truncation](#reproducing-the-truncation). |
 | `run_mga_example.py` | **Start here.** Single-file, stdlib-only end-to-end run: upload → bundle → run → watch `/logs` → download → print. Verifies the reference digest. |
 | `blueprints/mga-tuned.yaml` | The blueprint that exposes `max_new_tokens` and the instruction. Needs an admin to register. |
 | `reference/` | The committed reference output and a snapshot of the `mga` blueprint document that produced it. |
