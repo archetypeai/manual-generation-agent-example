@@ -33,7 +33,8 @@ step ceiling in the instruction — fixes the agent completely:
 |---|---|---|---|
 | Steps emitted | 6 | 10 | **19** |
 | Coverage | 16–85 s | 16–120 s | **11–139 s** |
-| Reference steps covered | **4 / 11** | 10 / 11 | **11 / 11** |
+| Reference steps covered | **4 / 11** | **10 / 11** | 10 / 11 |
+| …at IoU ≥ 0.5 | 3 / 11 | 4 / 11 | 5 / 11 |
 | Words generated | 83 | 152 | 219 |
 | Final step | cut mid-clause | clean | clean |
 | md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` |
@@ -41,6 +42,21 @@ step ceiling in the instruction — fixes the agent completely:
 **A is what ships. C is what the model can do.** Everything between them is
 configuration: two values that a superseded version of this same blueprint
 exposed, and the current one doesn't.
+
+Note where the gain actually comes from: **`max_new_tokens` alone takes reference
+recall from 4/11 to 10/11.** The prompt adds breadth — an earlier start, spoken
+safety notes, finer segmentation — but not reference-step recall. And more steps is
+not strictly better by IoU: C's finer segmentation produces shorter spans scored
+against coarse reference intervals, so its mean IoU (0.46) is *lower* than A's 0.60
+across the four steps A found.
+
+Recall here is "some non-advisory prediction overlaps the reference interval". Be
+careful with it: MGA's output tiles the timeline with no gaps, so every reference
+interval necessarily overlaps *something*. An early version of this table claimed
+11/11 for C because a purely temporal match credited *"Do not touch the disc wheels
+or brakes"* as the match for `unscrew wheel`. [`evaluate.py`](evaluate.py) excludes
+advisories from candidacy for that reason, and reports IoU ≥ 0.3 / 0.5 alongside,
+because bare overlap is the most generous reading available.
 
 Run A is confirmed across **three runs on two machines**, byte-identical each time
 (generation is deterministic at `temperature: 0.0`).
@@ -264,7 +280,7 @@ owns the template that `ManualGenerationResultsParserNode` parses; asking for
 markdown sections risks losing the frame and timestamp fields, which are MGA's main
 advantage over the batch path.
 
-Result: **19 steps, 11–139 s, all 11 reference steps covered.** It emitted 19
+Result: **19 steps, 11–139 s, 10 of 11 reference steps covered.** It emitted 19
 against a ceiling of 20, so it stopped on content rather than configuration, and it
 started *earlier* than A and B, catching "stop the car safely on a firm level
 surface" that both missed.
@@ -539,6 +555,7 @@ Observations for the author, not defects.
 | `repro_truncation.py` | Minimal reproduction of the truncation, reporting each symptom as CONFIRMED / NOT REPRODUCED. `--analyse` works offline; `--blueprint` / `--max-new-tokens` / `--prompt` walk the A→B→C ladder. |
 | `blueprints/mga-tuned.yaml` | The blueprint that restores `max_new_tokens` and the instruction as bundle values. Needs an admin to register. |
 | `reference/` | The three committed run outputs (A, B, C) plus a snapshot of the active blueprint document. |
+| `evaluate.py` | Scores an output against CrossTask: reference-step recall, IoU at several thresholds, advisories and unmatched predictions counted separately. Offline. `--compare` prints the A/B/C ladder. |
 | `mga_api.py` | Shared stdlib client (streaming upload for large videos, network retries, `/logs` polling). |
 | `inspect_bundle.py` | Discovery: dumps a bundle, its blueprint, its runs, their logs and outputs. |
 | `probe_max_frames.py` | Creates bundles across a `max_frames` ladder and optionally runs them. Phase 1 is free. |
@@ -548,9 +565,18 @@ Observations for the author, not defects.
 
 ## Not yet built
 
-- **The scorer.** Step alignment (semantic, since MGA emits prose against terse
-  reference labels) plus temporal IoU, separating taxonomy gaps from real errors.
-  Now worth building: run C is a non-truncated output to score against.
+- **Semantic step matching.** `evaluate.py` matches on temporal overlap and
+  excludes advisories, which is enough to stop the worst inflation but not enough to
+  catch a systematic one-step offset — C's predictions run a few seconds late, so
+  several reference steps match their *neighbour's* action. Confirming a match by
+  text as well as time is the next real improvement.
+- **Breadth.** One video, one task, so none of these numbers have a spread.
+  `INMUrGdA_RA`, `0kfJ7Lu4tvo` and `Z63ZcJXc29E` are all sub-5-minute videos of the
+  same task with all 11 steps annotated — roughly an hour of GPU to turn "10/11 on
+  one video" into a range.
+- **A video-suitability preflight.** Duration under ~5 minutes, an audio track
+  present, and a sane frame rate are all things worth checking before spending a
+  run.
 - **A `max_frames` sweep.** Deferred on evidence — 32 vs 64 changed the wording but
   produced the same 6 steps and the same coverage, so it cannot measure anything
   until the cap is lifted.
