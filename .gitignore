@@ -1,0 +1,28 @@
+# Secrets — never commit. Contains a live dev API key.
+.env
+.env.*
+!.env.example
+
+# Source video and any derived clips. Large, and licensed by whoever published
+# them — see the README's Data attribution section before redistributing.
+data/raw/
+data/clips/
+
+# Agent run outputs — regenerable, named per-clip at runtime.
+mga-output*.json
+mga-output*.csv
+eval_out/
+eval_out_*/
+
+# Raw API responses from inspect_bundle.py — a snapshot of dev, not source.
+discovery/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+.DS_Store
+
+# Local Claude Code settings
+.claude/settings.local.json
