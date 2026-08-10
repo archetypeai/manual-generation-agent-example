@@ -286,6 +286,23 @@ Two platform notes that made this easy to miss:
   resolves by `blueprint_id`, still accepts new bundles, and still runs. Only the
   *key* `mga` resolves to the active version.
 
+### Setting it on the superseded blueprint
+
+A bundle can target the older blueprint by **id** rather than by key, and that
+path is accepted end to end:
+
+```sh
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/bundles" \
+  -d '{"blueprint":"blp_76kyqm4vjp9pt8tvfz8tks7x6t","values":{"max_frames":64,"max_new_tokens":2048}}'
+# -> 201 ready;  then POST /agents/bundles/<id>/run -> 202
+```
+
+**Diagnosis only.** That blueprint is `is_active: false`, so nothing built on it
+can ship and it may be removed without notice. Its value is evidence: it shows the
+parameters work when a blueprint wires them, which is what makes "restore the nine
+values on the active blueprint" a concrete ask rather than a guess.
+
 ### `blueprints/mga-tuned.yaml`
 
 A ready-to-register blueprint that wires the fix through. Graph, models and
