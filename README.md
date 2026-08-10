@@ -181,13 +181,14 @@ tellingly, stops at the same token budget:
 | Steps emitted | 6 | 6 |
 | Coverage | 16.0–85.0 s | 16.0–81.0 s |
 | **Words generated** | **83** | **83** |
-| Est. tokens | ~167 | ~169 |
+| Characters | 441 | 449 |
 | Final step cut at | `…and raise the car` | `…Locate the jacking point under the` |
 | Reference steps missed | 5–11 | 5–11 |
 | md5 | `080e551a…` | `7d3ed9c3…` |
 
 Two entirely different generations — different wording, different boundaries —
-landing on the same word count within two tokens. That is a hard cap.
+landing on the **same word count**, each cut mid-clause. That is a hard cap, and
+the blueprint history says what it is: `max_new_tokens: 256`.
 
 It also shows **verbosity and coverage trade off directly**: at `mf=32` the
 descriptions are richer ("Stop the car on a firm level surface away from
@@ -216,13 +217,20 @@ penalize correct output.
 
 ## The token cap
 
-Output stops after ~169 generated tokens (83 words / 441 characters plus
-per-step structure), consistent with a 256-token default. The evidence is
-punctuation: steps 0–4 all end in a full stop, step 5 ends `…and raise the car`
-with none.
+**The cap is `max_new_tokens: 256`.** That is not inferred — it is the documented
+default of the *previous* version of this blueprint, which exposed the value and
+annotated it: `# Maximum number of tokens the model may generate in the response.
+`..32768``. The active blueprint no longer exposes it, so 256 is now effectively
+hardcoded.
 
-**It cannot be raised from a bundle.** Two runs differing only by
-`max_new_tokens` produced byte-identical output:
+The output-side evidence is punctuation: steps 0–4 all end in a full stop, step 5
+ends `…and raise the car` with none. (An earlier version of this README estimated
+"~169 tokens" from character counts. That estimate was too low — it missed the
+per-step scaffolding the model emits before the parser strips it. Trust the 256.)
+
+**It cannot be raised from a bundle on the active blueprint.** Three runs across
+two machines all produced byte-identical output, `1146 bytes`, md5
+`080e551a88f0bdcd857e48557366ae60` — with and without `max_new_tokens: 1024`:
 
 | Run | Bundle values | Output | md5 |
 |---|---|---|---|
@@ -244,16 +252,39 @@ on the bundle and wired to nothing. Both workarounds fail *silently*:
 `nodes: {fusion: {config: …}}` returns 201 with the `nodes` key absent from the
 response entirely.
 
-**And it is not a naming problem.** Across all 8 blueprints registered in the org
-there are 35 distinct node config keys and **not one is generation-related** — no
-`max_new_tokens`, `max_tokens`, `temperature`, `top_k`, `top_p`,
-`repetition_penalty`. `NewtonFusionModelNode` appears in `mga` and `tva` and in
-both its config is only `{model: …}`. There is no way to test a candidate key
-from outside either: `GET /agents/nodes` → 404 and `POST /agents/blueprints` →
-403 (admin only).
+**These parameters were exposed and then removed.** A superseded version of this
+same blueprint — `blp_76kyqm4vjp9pt8tvfz8tks7x6t`, `blueprint_key: mga`,
+`is_canonical: true`, **`is_active: false`** — wires nine of them straight into the
+fusion node:
 
-Open questions for the algorithm author: **is a generation parameter exposed on
-`NewtonFusionModelNode` under any name, and what is today's default?**
+```yaml
+fusion:
+  key: NewtonFusionModelNode
+  config:
+    model, max_new_tokens, enable_thinking, temperature,
+    top_k, top_p, repetition_penalty, seed, stop
+```
+
+and takes its instruction from a value too: `default_text: ${values.prompt}`.
+Bundles built on it carry real settings — `bnd_6ks6k012458mg9a648kkf7tebk` has
+`max_new_tokens: 1024`, `temperature: 0.2`, `enable_thinking: true` and a full
+custom prompt. Its `temperature: 0.0` default also explains the determinism noted
+above: that YAML says `0.0` "decodes greedily and makes every sampling knob below
+inert".
+
+So the question for the algorithm author is not whether these can exist, but:
+**why were nine generation parameters dropped from the active `mga` blueprint, and
+can they be restored?**
+
+Two platform notes that made this easy to miss:
+
+- **`GET /agents/blueprints` only returns `is_active: true` blueprints.** An
+  earlier version of this README claimed no generation parameter existed anywhere,
+  based on surveying all 35 node config keys across "all 8 blueprints". The
+  listing had silently excluded the one that had them.
+- **Blueprints are soft-deprecated, not deleted.** The superseded version still
+  resolves by `blueprint_id`, still accepts new bundles, and still runs. Only the
+  *key* `mga` resolves to the active version.
 
 ### `blueprints/mga-tuned.yaml`
 
@@ -270,19 +301,24 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: applicat
   -d '{"blueprint":"mga-tuned","values":{"max_frames":64,"max_new_tokens":2048}}'
 ```
 
-Two caveats, both restated in the file's header: the fusion config **key names
-are unverified** (they come from `manual-gen-jos`, a different API against a
-different model — fall back to `max_new_tokens` alone if a run rejects an unknown
-key), and `enable_thinking` defaults to `false` because thinking tokens may count
-against the budget and *reduce* the steps that fit.
+The fusion config **key names are confirmed**, not guessed: they are exactly what
+the superseded `blp_76kyqm…` wired into the same node, so this file is closer to
+"restore what was removed" than a new proposal. It omits `seed` and `stop`, which
+that version also exposed and which are worth adding back too.
 
-> **Do not fix this by editing canonical `mga` in place.** Canonical blueprints
-> are not versioned, so an update means delete-and-recreate, which orphans every
-> existing bundle. This has already happened twice: the dev console bundle
-> `bnd_3ve9qfkve99e980rd858tm9dfb` returns 404 from the API, and its
-> console-reported blueprint id differs from both a run three days earlier and
-> the current one. Prior run outputs are unrecoverable — `/results` returns
-> `Job not found`.
+One judgement call: `enable_thinking` defaults to `false` here even though the
+bundle referenced above sets it `true`, because thinking tokens plausibly count
+against `max_new_tokens` and would *reduce* the steps that fit. Raise the budget
+before enabling it.
+
+> **Do not fix this by editing the active `mga` in place.** Prefer registering a
+> new version and flipping `is_active`, which is how `blp_76kyqm…` was superseded
+> — bundles pin `blueprint_id`, so an existing bundle keeps working when a new
+> version becomes active. (An earlier version of this README claimed updating a
+> canonical blueprint orphans every bundle built on it, citing the dev console
+> bundle `bnd_3ve9qfkve99e980rd858tm9dfb` returning 404. That was wrong twice
+> over: the 404 came from using the singular `/agents/bundle/{id}` — which 404s
+> for everything — and the bundle in fact returns 200 on `/agents/bundles/{id}`.)
 
 ## Reproducing the truncation
 
