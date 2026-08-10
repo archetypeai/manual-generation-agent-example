@@ -61,6 +61,12 @@ because bare overlap is the most generous reading available.
 Run A is confirmed across **three runs on two machines**, byte-identical each time
 (generation is deterministic at `temperature: 0.0`).
 
+**Scope: one video, by design.** This example demonstrates the mechanics and
+characterises a configuration defect; it is not a benchmark. Every figure below is a
+single observation. The 4/11 → 10/11 result is large and has a mechanical
+explanation, so it generalises with some confidence; the IoU figures are much more
+video-specific and should not be quoted as MGA's accuracy.
+
 All three outputs are committed under [`reference/`](reference), so the whole
 comparison is checkable offline with no API key:
 
@@ -570,10 +576,14 @@ Observations for the author, not defects.
   catch a systematic one-step offset — C's predictions run a few seconds late, so
   several reference steps match their *neighbour's* action. Confirming a match by
   text as well as time is the next real improvement.
-- **Breadth.** One video, one task, so none of these numbers have a spread.
-  `INMUrGdA_RA`, `0kfJ7Lu4tvo` and `Z63ZcJXc29E` are all sub-5-minute videos of the
-  same task with all 11 steps annotated — roughly an hour of GPU to turn "10/11 on
-  one video" into a range.
+- **Breadth, deliberately.** This example uses **one video by design**: its job is
+  to show the mechanics end to end and to characterise a configuration defect, not
+  to benchmark MGA. So treat every number here as a single observation, not an
+  average — the 4/11 → 10/11 jump is large and mechanically explained, but the IoU
+  figures in particular would move on another video. If a benchmark is ever wanted,
+  `INMUrGdA_RA` (201 s), `0kfJ7Lu4tvo` (222 s) and `Z63ZcJXc29E` (188 s) are
+  sub-5-minute videos of the same task with all 11 steps annotated, at ~15 min of
+  GPU each.
 - **A video-suitability preflight.** Duration under ~5 minutes, an audio track
   present, and a sane frame rate are all things worth checking before spending a
   run.
