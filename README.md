@@ -85,9 +85,18 @@ minutes**, and this one is 58% of that ceiling. Source resolution is nearly
 irrelevant because the pipeline resizes every frame to 224×224, so 360p is no
 worse than 1080p here — only smaller.
 
-`--download` fetches it to **`data/clips/tire_i2JWkDyg26A.mp4`**, creating the
-directory if needed — you do not have to pick a location. Override with
-`--video <path>` if you already have a copy elsewhere. Without `yt-dlp` installed,
+Get the video with either script — `--download-only` fetches it and stops, making
+no API calls, so it works before anyone has a key:
+
+```sh
+python3 repro_truncation.py --download-only
+#   downloading https://www.youtube.com/watch?v=i2JWkDyg26A -> data/clips/tire_i2JWkDyg26A.mp4 ...
+#   video ready at data/clips/tire_i2JWkDyg26A.mp4 (5.7 MB)
+```
+
+It lands in **`data/clips/tire_i2JWkDyg26A.mp4`**, creating the directory — you do
+not have to pick a location. `--download` does the same and then runs. Override
+with `--video <path>` if you already have a copy elsewhere. Without `yt-dlp` installed,
 the scripts print the URL and the exact path to save to.
 
 **Videos are never committed.** `data/` is gitignored, with `*.mp4`/`*.mkv`/`*.webm`

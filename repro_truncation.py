@@ -226,7 +226,10 @@ def analyse(path: str) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--video", default=VIDEO_PATH)
-    ap.add_argument("--download", action="store_true")
+    ap.add_argument("--download", action="store_true",
+                    help="fetch the video into data/clips/ first, then run")
+    ap.add_argument("--download-only", action="store_true",
+                    help="fetch the video into data/clips/ and stop — no API calls")
     ap.add_argument("--max-frames", type=int, default=64)
     ap.add_argument("--ab", action="store_true",
                     help="also run with max_new_tokens=1024 and compare digests")
@@ -238,13 +241,17 @@ def main() -> None:
         print(f"\n{n}/3 symptoms confirmed.")
         return
 
-    if args.download and not os.path.exists(args.video):
+    if (args.download or args.download_only) and not os.path.exists(args.video):
         # data/ is gitignored, so the clip cannot be committed by accident.
         os.makedirs(os.path.dirname(args.video) or ".", exist_ok=True)
         print(f"downloading {VIDEO_URL} -> {args.video} ...")
         subprocess.run(["yt-dlp", "--no-warnings", "-f",
                         "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                         "--merge-output-format", "mp4", "-o", args.video, VIDEO_URL], check=True)
+    if args.download_only:
+        print(f"video ready at {args.video} "
+              f"({os.path.getsize(args.video) / 1e6:.1f} MB)")
+        return
     if not os.path.exists(args.video):
         sys.exit(f"no video at {args.video} — pass --download to fetch it")
 

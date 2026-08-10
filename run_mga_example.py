@@ -223,7 +223,10 @@ def show(path: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--video", default=VIDEO_PATH)
-    ap.add_argument("--download", action="store_true", help="fetch the video with yt-dlp first")
+    ap.add_argument("--download", action="store_true",
+                    help="fetch the video into data/clips/ first, then run")
+    ap.add_argument("--download-only", action="store_true",
+                    help="fetch the video into data/clips/ and stop — no API calls")
     ap.add_argument("--max-frames", type=int, default=64,
                     help="frames uniformly sampled across the whole video. 64 is the "
                          "reader/preprocessor batch size, so they land in one batch; "
@@ -249,8 +252,12 @@ def main() -> None:
             {"type": "file", "id": os.path.basename(args.video), "format": "mp4"}]}}, indent=2))
         return
 
-    if args.download:
+    if args.download or args.download_only:
         download_video(args.video)
+    if args.download_only:
+        print(f"video ready at {args.video} "
+              f"({os.path.getsize(args.video) / 1e6:.1f} MB)")
+        return
     if not os.path.exists(args.video):
         sys.exit(f"no video at {args.video} — pass --download to fetch it")
 
