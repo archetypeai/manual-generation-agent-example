@@ -6,10 +6,10 @@ embedded, so no CrossTask download is needed to check the symptoms.
 
     ATAI_API_KEY / ATAI_API_ENDPOINT in .env next to this file
 
-    python3 repro_truncation.py --download        # fetch video, run, analyse
-    python3 repro_truncation.py                   # video already on disk
-    python3 repro_truncation.py --ab              # ALSO prove max_new_tokens is inert
-    python3 repro_truncation.py --analyse out.jsonl   # offline, no API calls
+    python3 repro_truncation.py --analyse out.jsonl      # offline, no API calls
+    python3 repro_truncation.py --download-only          # just fetch the video
+    python3 repro_truncation.py                          # fetch if needed, run, analyse
+    python3 repro_truncation.py --max-new-tokens 1024    # show the value does nothing
 
 WHAT YOU SHOULD SEE
 
@@ -22,16 +22,19 @@ judging itself finished.
 The script prints each symptom as a CONFIRMED / NOT REPRODUCED line, so a
 colleague can tell at a glance whether they see the same thing.
 
-WHY --ab MATTERS
+WHY --max-new-tokens 1024 IS WORTH RUNNING
 
 `max_new_tokens` is the parameter that would raise the cap, and it is accepted by
 the API while having no effect: the `mga` blueprint's fusion node config is only
 `{model: ...}` and never references `${values.max_new_tokens}`, so the value is
-stored on the bundle and wired to nothing. `--ab` runs the same video twice,
-with and without it, and compares digests. Expect them to be IDENTICAL.
+stored on the bundle and wired to nothing.
 
-Costs ~15 min per run (~7.5 min of model download/load every run, nothing
-cached), so --ab is ~30 min. Dev runs these one at a time.
+You do not need two runs to show this. Generation is deterministic and the
+baseline output is committed to this repo, so a single run with the value set,
+producing the committed baseline digest, proves the value changed nothing.
+
+Costs ~15 min per run: ~7.5 min of model download/load on every run (nothing is
+cached), then ~2.5x realtime processing. Dev runs these one at a time.
 """
 from __future__ import annotations
 
@@ -119,10 +122,30 @@ def upload(path: str) -> str:
         return json.loads(r.read())["file_id"]
 
 
+def print_config(values: dict, video: str) -> None:
+    """Show exactly what is being sent, so the run is unambiguous in a paste."""
+    mnt = values.get("max_new_tokens")
+    print(f"\n{'='*78}\nCONFIGURATION\n{'='*78}")
+    print(f"  video           {video}")
+    print(f"  blueprint       {BLUEPRINT}  (canonical)")
+    print(f"  max_frames      {values.get('max_frames')}"
+          f"          (blueprint default is 16; 64 is the reader/preprocessor "
+          f"batch size)")
+    if mnt is None:
+        print("  max_new_tokens  not sent   (reproduces the as-shipped behaviour; "
+              "the mga\n                             blueprint exposes no "
+              "generation parameter at all)")
+    else:
+        print(f"  max_new_tokens  {mnt}       (accepted by the API — expect NO effect, "
+              f"because\n                             the fusion node config is only "
+              f"{{model: ...}})")
+    print(f"\n  bundle values sent: {json.dumps(values)}")
+
+
 def run_once(file_id: str, values: dict, label: str, out_path: str) -> str | None:
     """One full MGA run. Note: /agents/bundles is PLURAL, and /run returns 202."""
     _, ep = env()
-    print(f"\n=== {label}: values={values} ===")
+    print(f"\n=== {label}: values={json.dumps(values)} ===")
     bundle = api("POST", f"{ep}/agents/bundles",
                  body={"blueprint": BLUEPRINT, "name": f"MGA repro {label}", "values": values})
     print(f"  bundle={bundle['id']} status={bundle.get('status')}")
@@ -227,12 +250,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--video", default=VIDEO_PATH)
     ap.add_argument("--download", action="store_true",
-                    help="fetch the video into data/clips/ first, then run")
+                    help="(no longer needed — the video is fetched automatically "
+                         "when missing; kept so older invocations still work)")
     ap.add_argument("--download-only", action="store_true",
                     help="fetch the video into data/clips/ and stop — no API calls")
     ap.add_argument("--max-frames", type=int, default=64)
-    ap.add_argument("--ab", action="store_true",
-                    help="also run with max_new_tokens=1024 and compare digests")
+    ap.add_argument("--max-new-tokens", type=int, default=None,
+                    help="add max_new_tokens to the bundle values. Omitted by "
+                         "default, which reproduces the as-shipped behaviour. Set "
+                         "it to 1024 to see that the value is accepted and has no "
+                         "effect — the output is unchanged.")
     ap.add_argument("--analyse", metavar="JSONL", help="offline: analyse an existing output")
     args = ap.parse_args()
 
@@ -241,44 +268,82 @@ def main() -> None:
         print(f"\n{n}/3 symptoms confirmed.")
         return
 
-    if (args.download or args.download_only) and not os.path.exists(args.video):
-        # data/ is gitignored, so the clip cannot be committed by accident.
-        os.makedirs(os.path.dirname(args.video) or ".", exist_ok=True)
-        print(f"downloading {VIDEO_URL} -> {args.video} ...")
-        subprocess.run(["yt-dlp", "--no-warnings", "-f",
-                        "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                        "--merge-output-format", "mp4", "-o", args.video, VIDEO_URL], check=True)
-    if args.download_only:
-        print(f"video ready at {args.video} "
-              f"({os.path.getsize(args.video) / 1e6:.1f} MB)")
-        return
+    values = {"max_frames": args.max_frames}
+    if args.max_new_tokens is not None:
+        values["max_new_tokens"] = args.max_new_tokens
+    print_config(values, args.video)
+
+    # The video is a single fixed 5.7 MB asset whose URL is baked in, so fetch it
+    # automatically when it is missing rather than making the caller pass a flag.
+    # data/ is gitignored, so the clip cannot be committed by accident.
     if not os.path.exists(args.video):
-        sys.exit(f"no video at {args.video} — pass --download to fetch it")
+        if not any(os.access(os.path.join(d, "yt-dlp"), os.X_OK)
+                   for d in os.environ.get("PATH", "").split(os.pathsep)):
+            sys.exit(f"no video at {args.video}, and yt-dlp is not installed.\n"
+                     f"  Install yt-dlp, or download it manually and save it there:\n"
+                     f"  {VIDEO_URL}")
+        os.makedirs(os.path.dirname(args.video) or ".", exist_ok=True)
+        print(f"fetching the video (5.7 MB) -> {args.video} ...")
+        try:
+            subprocess.run(["yt-dlp", "--no-warnings", "-f",
+                            "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                            "--merge-output-format", "mp4", "-o", args.video,
+                            VIDEO_URL], check=True)
+        except subprocess.CalledProcessError:
+            # YouTube rate-limits repeated pulls and answers 403 for a while.
+            # Nothing about the platform is wrong here, so say so plainly rather
+            # than surfacing a traceback.
+            sys.exit(f"\nyt-dlp could not fetch the video.\n"
+                     f"  A 403 here is usually YouTube rate-limiting — wait a few "
+                     f"minutes and retry,\n  or try `yt-dlp -U` to update.\n"
+                     f"  You can also download it by hand and save it as "
+                     f"{args.video}:\n    {VIDEO_URL}\n"
+                     f"  Meanwhile the analysis needs no video at all:\n"
+                     f"    python3 {os.path.basename(__file__)} --analyse "
+                     f"reference/mga-output-i2JWkDyg26A-mf64.jsonl")
+        if not os.path.exists(args.video):
+            sys.exit(f"yt-dlp reported success but {args.video} is missing")
+    else:
+        print(f"using {args.video} ({os.path.getsize(args.video) / 1e6:.1f} MB)")
+
+    if args.download_only:
+        return
 
     print(f"uploading {args.video} ...")
     file_id = upload(args.video)
     print(f"  file_id={file_id}")
 
-    base = run_once(file_id, {"max_frames": args.max_frames}, "A (as shipped)",
-                    "data/repro-A.jsonl")
-    if not base:
-        sys.exit("run A did not complete — see the log output above")
-    n = analyse(base)
+    out = run_once(file_id, values, "run", "data/repro.jsonl")
+    if not out:
+        sys.exit("the run did not complete — see the log output above")
+    n = analyse(out)
     print(f"\n{n}/3 symptoms confirmed.")
 
-    if args.ab:
-        alt = run_once(file_id,
-                       {"max_frames": args.max_frames, "max_new_tokens": 1024},
-                       "B (+ max_new_tokens=1024)", "data/repro-B.jsonl")
-        if alt:
-            da = hashlib.md5(open(base, "rb").read()).hexdigest()
-            db = hashlib.md5(open(alt, "rb").read()).hexdigest()
-            print(f"\n{'='*78}\nA/B on max_new_tokens\n{'='*78}")
-            print(f"  A  max_frames={args.max_frames}                     md5 {da}")
-            print(f"  B  max_frames={args.max_frames}, max_new_tokens=1024  md5 {db}")
-            print("  => IDENTICAL: max_new_tokens is accepted by the API and has no effect"
-                  if da == db else
-                  "  => OUTPUTS DIFFER: max_new_tokens now has an effect (blueprint changed?)")
+    # One run is enough to show max_new_tokens is inert, because generation is
+    # deterministic and the baseline output is committed to this repo. If the
+    # digest still matches the baseline that omitted the value entirely, the
+    # value changed nothing. Only meaningful at max_frames=64, which is what the
+    # committed baseline was produced with.
+    if args.max_new_tokens is not None:
+        digest = hashlib.md5(open(out, "rb").read()).hexdigest()
+        print(f"\n{'='*78}\nDid max_new_tokens={args.max_new_tokens} change anything?"
+              f"\n{'='*78}")
+        if args.max_frames != 64:
+            print(f"  cannot tell: the committed baseline is max_frames=64, you ran "
+                  f"{args.max_frames}.\n  Re-run at --max-frames 64 to compare.")
+        elif digest == REFERENCE_MD5:
+            print(f"  this run   md5 {digest}")
+            print(f"  baseline   md5 {REFERENCE_MD5}   "
+                  f"(reference/mga-output-i2JWkDyg26A-mf64.jsonl, no max_new_tokens)")
+            print("  => IDENTICAL. max_new_tokens was accepted by the API (HTTP 201,\n"
+                  "     echoed back in the bundle values) and had NO effect. The mga\n"
+                  "     blueprint's fusion node config is only {model: ...} and never\n"
+                  "     references ${values.max_new_tokens}, so it is wired to nothing.")
+        else:
+            print(f"  this run   md5 {digest}")
+            print(f"  baseline   md5 {REFERENCE_MD5}")
+            print("  => OUTPUTS DIFFER. max_new_tokens now has an effect — the\n"
+                  "     blueprint has presumably been changed to wire it through.")
 
 
 if __name__ == "__main__":

@@ -43,8 +43,9 @@ python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.json
 ```
 
 That checks the three symptoms against the committed output and prints
-`3/3 symptoms confirmed`. Add `--download` to run it live against the platform,
-or `--ab` to also demonstrate that `max_new_tokens` has no effect.
+`3/3 symptoms confirmed`. Add `--download` to run it live against the platform, or
+`--max-new-tokens 1024` to demonstrate that the value which *should* raise the cap
+has no effect — the run comes back with the committed baseline digest, unchanged.
 
 ## Quick start
 
@@ -90,13 +91,16 @@ no API calls, so it works before anyone has a key:
 
 ```sh
 python3 repro_truncation.py --download-only
-#   downloading https://www.youtube.com/watch?v=i2JWkDyg26A -> data/clips/tire_i2JWkDyg26A.mp4 ...
-#   video ready at data/clips/tire_i2JWkDyg26A.mp4 (5.7 MB)
+#   fetching the video (5.7 MB) -> data/clips/tire_i2JWkDyg26A.mp4 ...
 ```
 
+A bare `python3 repro_truncation.py` also fetches it automatically when missing,
+so `--download-only` is only for getting the file without starting a run.
+
 It lands in **`data/clips/tire_i2JWkDyg26A.mp4`**, creating the directory — you do
-not have to pick a location. `--download` does the same and then runs. Override
-with `--video <path>` if you already have a copy elsewhere. Without `yt-dlp` installed,
+not have to pick a location. Override with `--video <path>` if you already have a
+copy elsewhere. If YouTube answers 403 (it rate-limits repeated pulls), the script
+says so and points at the offline `--analyse` path, which needs no video. Without `yt-dlp` installed,
 the scripts print the URL and the exact path to save to.
 
 **Videos are never committed.** `data/` is gitignored, with `*.mp4`/`*.mkv`/`*.webm`
