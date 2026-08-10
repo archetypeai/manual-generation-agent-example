@@ -51,7 +51,13 @@ import uuid
 
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
 VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
-BLUEPRINT = "mga"
+# The ACTIVE canonical blueprint (is_canonical: true, is_active: true) and the
+# newest of the four mga versions. This is the default: it is what ships.
+BLUEPRINT_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
+# A superseded version (is_active: false) that still accepts bundles and runs. It
+# exposes max_new_tokens, prompt, temperature, top_k, top_p, repetition_penalty,
+# seed and stop. DIAGNOSIS ONLY — nothing built on an inactive blueprint can ship.
+BLUEPRINT_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
 DURATION_S = 173.2
 # md5 of the output this repo files, at max_frames=64 with no max_new_tokens.
 REFERENCE_MD5 = "080e551a88f0bdcd857e48557366ae60"
@@ -77,6 +83,11 @@ REFERENCE_STEPS = [
     (10, "tight wheel",    108.6, 132.2),
     (11, "put things back",120.9, 125.6),
 ]
+# Last annotated reference step ends here. Coverage is judged against this, not
+# against DURATION_S: the tail of the video is outro with no steps in it, so
+# "uncovered" measured to 173.2 s penalises output that is actually complete.
+REFERENCE_SPAN_END = 132.2
+
 TERMINAL_EVENTS = ("pod.terminated", "job.completed", "job.failed", "job.canceled")
 
 
@@ -128,32 +139,81 @@ def upload(path: str) -> str:
         return json.loads(r.read())["file_id"]
 
 
-def print_config(values: dict, video: str) -> None:
-    """Show exactly what is being sent, so the run is unambiguous in a paste."""
-    mnt = values.get("max_new_tokens")
+def wiring(bp: dict) -> dict:
+    """Which value keys does this blueprint actually consume?
+
+    A value is only honoured if it appears in `values` AND some node or connector
+    config references it as ${values.<key>}. The API accepts arbitrary keys in a
+    bundle's `values` and silently ignores unreferenced ones, which is how
+    `max_new_tokens: 1024` can return HTTP 201 and change nothing. Reading the
+    blueprint document is the only way to tell in advance.
+    """
+    doc = bp["document"]
+    blob = json.dumps({"nodes": doc.get("nodes"),
+                       "connectors": doc.get("connectors")})
+    out = {}
+    for k in (doc.get("values") or {}):
+        ref = "${values." + k + "}"
+        out[k] = blob.find(ref) >= 0
+    return out
+
+
+def print_config(values: dict, video: str, bp: dict) -> None:
+    """Show what is being sent AND whether the blueprint will honour it."""
+    wired = wiring(bp)
+    doc = bp["document"]
     print(f"\n{'='*78}\nCONFIGURATION\n{'='*78}")
     print(f"  video           {video}")
-    print(f"  blueprint       {BLUEPRINT}  (canonical)")
-    print(f"  max_frames      {values.get('max_frames')}"
-          f"          (blueprint default is 16; 64 is the reader/preprocessor "
-          f"batch size)")
-    if mnt is None:
-        print("  max_new_tokens  not sent   (reproduces the as-shipped behaviour; "
-              "the mga\n                             blueprint exposes no "
-              "generation parameter at all)")
+    state = "ACTIVE — this is what ships" if bp["is_active"] else \
+            "INACTIVE (superseded) — DIAGNOSIS ONLY, results cannot ship"
+    print(f"  blueprint       {bp['id']}\n"
+          f"                  key={bp['blueprint_key']}  canonical={bp['is_canonical']}  {state}")
+
+    for k, v in values.items():
+        if k not in doc.get("values", {}):
+            note = "NOT A VALUE on this blueprint — accepted by the API, ignored"
+        elif not wired.get(k):
+            note = "declared but NOT WIRED to any node — accepted, ignored"
+        else:
+            note = "honoured"
+        shown = json.dumps(v)
+        if len(shown) > 46:
+            shown = shown[:43] + '..."'
+        print(f"  {k:<15} {shown:<48} -> {note}")
+
+    # The instruction actually in force, resolved the same way the platform does.
+    src = doc["connectors"]["source"]["config"]
+    dt = src.get("default_text", "")
+    if dt.startswith("${values."):
+        key = dt[len("${values."):-1]
+        eff = values.get(key, doc["values"].get(key))
+        origin = "from your --prompt" if key in values else f"blueprint default for values.{key}"
     else:
-        print(f"  max_new_tokens  {mnt}       (accepted by the API — expect NO effect, "
-              f"because\n                             the fusion node config is only "
-              f"{{model: ...}})")
-    print(f"\n  bundle values sent: {json.dumps(values)}")
+        eff = dt
+        origin = "HARDCODED in the blueprint — not settable from a bundle"
+    print(f"\n  instruction in force ({origin}):")
+    print(f"    {json.dumps(eff)[:300]}")
+    print(f"\n  bundle values sent: {json.dumps(values)[:200]}")
+
+    inert = [k for k in values if k in doc.get("values", {}) and not wired.get(k)] + \
+            [k for k in values if k not in doc.get("values", {})]
+    if inert:
+        print(f"\n  WARNING: {inert} will have NO effect on this blueprint.")
+        if not bp["is_active"]:
+            pass
+        elif any(k in ("max_new_tokens", "prompt") for k in inert):
+            print(f"  The superseded {BLUEPRINT_WITH_PARAMS} does wire these —\n"
+                  f"  pass --blueprint {BLUEPRINT_WITH_PARAMS} to try them (diagnosis only).")
 
 
-def run_once(file_id: str, values: dict, label: str, out_path: str) -> str | None:
+def run_once(file_id: str, values: dict, label: str, out_path: str,
+             blueprint: str) -> str | None:
     """One full MGA run. Note: /agents/bundles is PLURAL, and /run returns 202."""
     _, ep = env()
     print(f"\n=== {label}: values={json.dumps(values)} ===")
     bundle = api("POST", f"{ep}/agents/bundles",
-                 body={"blueprint": BLUEPRINT, "name": f"MGA repro {label}", "values": values})
+                 body={"blueprint": blueprint, "name": f"MGA repro {label}",
+                       "values": values})
     print(f"  bundle={bundle['id']} status={bundle.get('status')}")
     agent = api("POST", f"{ep}/agents/bundles/{bundle['id']}/run",
                 body={"connectors": {"source": [{"type": "file", "id": file_id, "format": "mp4"}]}})
@@ -205,16 +265,18 @@ def analyse(path: str) -> int:
         print(f"    [{r['timestamp_start']:>6.1f} - {r['timestamp_end']:>6.1f}s]  {r['instruction']}")
 
     found = 0
-    print(f"\n  {'-'*74}\n  SYMPTOM 1 — coverage stops well before the video ends\n  {'-'*74}")
+    print(f"\n  {'-'*74}\n  SYMPTOM 1 — coverage stops before the procedure ends\n  {'-'*74}")
     last = max(r["timestamp_end"] for r in res)
-    gap = DURATION_S - last
-    print(f"    last prediction ends   : {last:.1f}s")
-    print(f"    video duration         : {DURATION_S:.1f}s")
-    print(f"    uncovered tail         : {gap:.1f}s ({100*gap/DURATION_S:.0f}% of the video)")
-    if gap > 30:
+    print(f"    last prediction ends     : {last:.1f}s")
+    print(f"    last reference step ends : {REFERENCE_SPAN_END:.1f}s")
+    print(f"    video duration           : {DURATION_S:.1f}s  (the tail is outro, no steps in it)")
+    shortfall = REFERENCE_SPAN_END - last
+    if shortfall > 5:
+        print(f"    procedure left uncovered : {shortfall:.1f}s "
+              f"({100*shortfall/REFERENCE_SPAN_END:.0f}% of the annotated procedure)")
         print("    => CONFIRMED"); found += 1
     else:
-        print("    => NOT REPRODUCED")
+        print(f"    => NOT REPRODUCED — output reaches the end of the annotated procedure")
 
     print(f"\n  {'-'*74}\n  SYMPTOM 2 — reference steps 5-11 get no prediction\n  {'-'*74}")
     missed = []
@@ -228,8 +290,11 @@ def analyse(path: str) -> int:
     print(f"    missed: {missed}  ({len(missed)}/{len(REFERENCE_STEPS)} reference steps)")
     if missed == [5, 6, 7, 8, 9, 10, 11]:
         print("    => CONFIRMED (exactly steps 5-11, as filed)"); found += 1
+    elif len(missed) >= 4:
+        print(f"    => LARGELY REPRODUCED (missed {missed}; filed report says 5-11)"); found += 1
     elif missed:
-        print(f"    => PARTIALLY REPRODUCED (missed {missed}, filed report says 5-11)"); found += 1
+        print(f"    => LARGELY RESOLVED — only {missed} missed, vs 5-11 in the filed report.")
+        print("       Not counted as reproducing the defect.")
     else:
         print("    => NOT REPRODUCED — every reference step covered")
 
@@ -247,8 +312,13 @@ def analyse(path: str) -> int:
 
     chars = sum(len(r["instruction"]) for r in res)
     words = sum(len(r["instruction"].split()) for r in res)
-    print(f"\n  generated volume: {len(res)} steps, {words} words, {chars} chars"
-          f" ~= {chars/3.7 + 8*len(res):.0f} tokens (consistent with a 256-token cap)")
+    truncated = res[-1]["instruction"][-1] not in ".!?"
+    print(f"\n  generated volume: {len(res)} steps, {words} words, {chars} chars")
+    if truncated:
+        print("  The final step is unterminated, so generation was cut off. On the active"
+              "\n  blueprint the cap is a hardcoded max_new_tokens: 256.")
+    else:
+        print("  Generation terminated cleanly — the output budget was not the limit here.")
     return found
 
 
@@ -261,6 +331,14 @@ def main() -> None:
     ap.add_argument("--download-only", action="store_true",
                     help="fetch the video into data/clips/ and stop — no API calls")
     ap.add_argument("--max-frames", type=int, default=64)
+    ap.add_argument("--blueprint", default=BLUEPRINT_ACTIVE,
+                    help=f"blueprint id or key. Default {BLUEPRINT_ACTIVE} — the "
+                         f"ACTIVE canonical mga, i.e. what ships. Pass "
+                         f"{BLUEPRINT_WITH_PARAMS} to reach a superseded version "
+                         f"that wires max_new_tokens and prompt (diagnosis only).")
+    ap.add_argument("--prompt", default=None,
+                    help="set values.prompt. Only exists on a blueprint that "
+                         "declares it — the active one hardcodes its instruction.")
     ap.add_argument("--max-new-tokens", type=int, default=None,
                     help="add max_new_tokens to the bundle values. Omitted by "
                          "default, which reproduces the as-shipped behaviour. Set "
@@ -274,10 +352,13 @@ def main() -> None:
         print(f"\n{n}/3 symptoms confirmed.")
         return
 
+    bp = api("GET", f"{env()[1]}/agents/blueprints/{args.blueprint}")
     values = {"max_frames": args.max_frames}
     if args.max_new_tokens is not None:
         values["max_new_tokens"] = args.max_new_tokens
-    print_config(values, args.video)
+    if args.prompt is not None:
+        values["prompt"] = args.prompt
+    print_config(values, args.video, bp)
 
     # The video is a single fixed 5.7 MB asset whose URL is baked in, so fetch it
     # automatically when it is missing rather than making the caller pass a flag.
@@ -328,7 +409,7 @@ def main() -> None:
     file_id = upload(args.video)
     print(f"  file_id={file_id}")
 
-    out = run_once(file_id, values, "run", "data/repro.jsonl")
+    out = run_once(file_id, values, "run", "data/repro.jsonl", bp["id"])
     if not out:
         sys.exit("the run did not complete — see the log output above")
     n = analyse(out)
@@ -339,7 +420,8 @@ def main() -> None:
     # digest still matches the baseline that omitted the value entirely, the
     # value changed nothing. Only meaningful at max_frames=64, which is what the
     # committed baseline was produced with.
-    if args.max_new_tokens is not None:
+    if args.max_new_tokens is not None and bp["id"] == BLUEPRINT_ACTIVE \
+            and args.prompt is None:
         digest = hashlib.md5(open(out, "rb").read()).hexdigest()
         print(f"\n{'='*78}\nDid max_new_tokens={args.max_new_tokens} change anything?"
               f"\n{'='*78}")

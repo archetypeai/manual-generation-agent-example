@@ -60,7 +60,13 @@ import uuid
 # barely matters because the pipeline resizes every frame to 224x224.
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
 VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
-BLUEPRINT = "mga"
+# The ACTIVE canonical blueprint (is_canonical: true, is_active: true), newest of
+# four mga versions. Default because it is what ships.
+BLUEPRINT_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
+# Superseded (is_active: false) but still runnable. Wires max_new_tokens, prompt,
+# temperature, top_k, top_p, repetition_penalty, seed, stop into the fusion node.
+# DIAGNOSIS ONLY — nothing built on an inactive blueprint can ship.
+BLUEPRINT_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
 # What this script produced on dev at max_frames=64. Generation is deterministic,
 # so a matching digest means you reproduced the run exactly.
 KNOWN_MD5 = "080e551a88f0bdcd857e48557366ae60"
@@ -231,6 +237,15 @@ def main() -> None:
                     help="frames uniformly sampled across the whole video. 64 is the "
                          "reader/preprocessor batch size, so they land in one batch; "
                          "the blueprint default is 16. (default: 64)")
+    ap.add_argument("--blueprint", default=BLUEPRINT_ACTIVE,
+                    help=f"blueprint id or key (default {BLUEPRINT_ACTIVE}, the "
+                         f"active canonical mga)")
+    ap.add_argument("--max-new-tokens", type=int, default=None,
+                    help="raise the output budget. Inert on the active blueprint, "
+                         "which hardcodes 256 — see the README.")
+    ap.add_argument("--prompt", default=None,
+                    help="override the instruction. Only settable on a blueprint "
+                         "that declares values.prompt.")
     ap.add_argument("--name", default="MGA CrossTask tire change")
     ap.add_argument("--output", default="data/mga-output.jsonl")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
@@ -243,10 +258,15 @@ def main() -> None:
 
     _, endpoint = env()
     values = {"max_frames": args.max_frames}
+    if args.max_new_tokens is not None:
+        values["max_new_tokens"] = args.max_new_tokens
+    if args.prompt is not None:
+        values["prompt"] = args.prompt
 
     if args.dry_run:
         print(f"POST {endpoint}/agents/bundles")
-        print(json.dumps({"blueprint": BLUEPRINT, "name": args.name, "values": values}, indent=2))
+        print(json.dumps({"blueprint": args.blueprint, "name": args.name,
+                          "values": values}, indent=2))
         print(f"POST {endpoint}/agents/bundles/<id>/run")
         print(json.dumps({"connectors": {"source": [
             {"type": "file", "id": os.path.basename(args.video), "format": "mp4"}]}}, indent=2))
@@ -267,9 +287,27 @@ def main() -> None:
     # No `artifacts` map: the mga blueprint pins newton-fusion:1.0 and
     # whisper:large-v3 itself. This is the main shape difference from red/osm,
     # which require a fitted classifier artifact.
-    print(f"creating bundle from blueprint '{BLUEPRINT}' (values={values}) ...")
+    # Warn about values this blueprint will silently ignore. A value is only
+    # honoured if it is declared in `values` AND referenced as ${values.<key>} by
+    # some node or connector; the API accepts anything and drops the rest.
+    bp = api("GET", f"{endpoint}/agents/blueprints/{args.blueprint}")
+    doc = bp["document"]
+    wired = json.dumps({"nodes": doc.get("nodes"), "connectors": doc.get("connectors")})
+    inert = [k for k in values
+             if k not in doc.get("values", {})
+             or ("${values." + k + "}") not in wired]
+    print(f"blueprint {bp['id']} (key={bp['blueprint_key']}, "
+          f"active={bp['is_active']})")
+    if not bp["is_active"]:
+        print("  NOTE: this blueprint is superseded — results cannot ship.")
+    if inert:
+        print(f"  WARNING: {inert} is not wired on this blueprint and will be "
+              f"silently ignored.")
+
+    print(f"creating bundle (values={values}) ...")
     bundle = api("POST", f"{endpoint}/agents/bundles",
-                 body={"blueprint": BLUEPRINT, "name": args.name, "values": values})
+                 body={"blueprint": args.blueprint, "name": args.name,
+                       "values": values})
     print(f"  bundle_id={bundle['id']}  status={bundle.get('status')}")
 
     agent = api("POST", f"{endpoint}/agents/bundles/{bundle['id']}/run",
