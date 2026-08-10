@@ -362,6 +362,19 @@ Because generation is deterministic, a correct reproduction returns the committe
 baseline digest `080e551a88f0bdcd857e48557366ae60` and the analysis is identical
 to level 1.
 
+The script also checks the **input** first, because an output digest only means
+something if the input bytes match:
+
+```
+using data/clips/tire_i2JWkDyg26A.mp4 (5.7 MB)
+  video md5 5771f46d637314fdad86d6c4c934dbb5  (matches the reference input)
+```
+
+If YouTube ever offers different formats and the video md5 differs, the script
+says so and notes that the three symptoms should still reproduce while the output
+digest legitimately will not — so a digest mismatch is not mistaken for a failed
+reproduction.
+
 ### 3. Show that `max_new_tokens` has no effect — ~15 minutes
 
 ```sh

@@ -53,7 +53,13 @@ VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
 VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
 BLUEPRINT = "mga"
 DURATION_S = 173.2
+# md5 of the output this repo files, at max_frames=64 with no max_new_tokens.
 REFERENCE_MD5 = "080e551a88f0bdcd857e48557366ae60"
+# md5 of the video itself. The output digest is only meaningful if the input bytes
+# match, so this is checked before any comparison is trusted. yt-dlp has been
+# reproducible here (formats 396+140, 5,678,742 bytes, 640x360, 25 fps, 4,329
+# frames), but format selection can drift as YouTube changes what it offers.
+VIDEO_MD5 = "5771f46d637314fdad86d6c4c934dbb5"
 
 # CrossTask task 40567 "Change a Tire", video i2JWkDyg26A. Intervals are merged
 # across the two independent annotators (earliest start, latest end).
@@ -305,6 +311,15 @@ def main() -> None:
             sys.exit(f"yt-dlp reported success but {args.video} is missing")
     else:
         print(f"using {args.video} ({os.path.getsize(args.video) / 1e6:.1f} MB)")
+
+    video_md5 = hashlib.md5(open(args.video, "rb").read()).hexdigest()
+    if video_md5 == VIDEO_MD5:
+        print(f"  video md5 {video_md5}  (matches the reference input)")
+    else:
+        print(f"  video md5 {video_md5}\n"
+              f"  NOTE: differs from the reference input ({VIDEO_MD5}). The three\n"
+              f"  symptoms should still reproduce, but the OUTPUT digest will not\n"
+              f"  match, and that is expected rather than a failed reproduction.")
 
     if args.download_only:
         return
