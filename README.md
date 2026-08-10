@@ -90,10 +90,32 @@ Stdlib only — no virtualenv, no install step. Budget **~15 minutes**: about
 7.5 min of model download and load on *every* run (nothing is cached between
 runs), then roughly 2.5× realtime processing. Dev runs these one at a time.
 
+> ### The defaults are pinned to a superseded blueprint — read this
+>
+> `run_mga_example.py` defaults to **`blp_76kyqm4vjp9pt8tvfz8tks7x6t`** with
+> `max_new_tokens: 2048` and a coverage-oriented instruction, because the **active**
+> blueprint caps output at a hardcoded `max_new_tokens: 256` and returns a truncated
+> manual — 6 steps covering half the video. The superseded blueprint exposes the
+> generation parameters, so the example produces a complete manual today.
+>
+> **This is a temporary pin.** That blueprint is `is_active: false`: it is not a
+> supported target and could be removed at any time. When the generation parameters
+> are restored on the active blueprint, flip `BLUEPRINT_DEFAULT` back to
+> `BLUEPRINT_ACTIVE` and update `KNOWN_MD5`. Both are marked in the script.
+>
+> To see what the shipped configuration does instead:
+>
+> ```sh
+> python3 run_mga_example.py --blueprint mga       # the active blueprint, truncated
+> ```
+>
+> `--show` recognises both digests and tells you which one you are looking at.
+
 ```sh
 python3 run_mga_example.py --dry-run           # print the payloads, call nothing
+python3 run_mga_example.py --blueprint mga     # the active blueprint (truncated output)
 python3 run_mga_example.py --max-frames 32     # a different sampling density
-python3 run_mga_example.py --show reference/mga-output-i2JWkDyg26A-mf64.jsonl
+python3 run_mga_example.py --show reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.jsonl
 ```
 
 ### The video
@@ -281,10 +303,28 @@ Each clause targets a measured failure:
 | "at most 15 words" | at `max_frames=32`, richer prose bought *less* coverage |
 | "what is shown **and what is said**" | whisper feeds `prompt.audio` |
 
-Deliberately **no output-format instruction**. `ManualGenerationPromptGeneratorNode`
-owns the template that `ManualGenerationResultsParserNode` parses; asking for
-markdown sections risks losing the frame and timestamp fields, which are MGA's main
-advantage over the batch path.
+Deliberately **no output-format instruction**, and this turns out to be the whole
+ballgame. `ManualGenerationPromptGeneratorNode` owns the template that
+`ManualGenerationResultsParserNode` parses, so a prompt specifying its own format
+makes the parser **return zero steps**.
+
+That is why `prompt` was exposed and then rolled back: it was tested, found fragile
+for exactly this reason, and reverted. Our results refine the picture rather than
+contradict it — a prompt that says *what to cover* parses cleanly (this one produced
+19 well-formed steps with frames and timestamps), while one that says *how to lay
+the output out* (markdown headings) does not.
+
+Two ways to expose it safely, if that is ever wanted:
+
+- Have the prompt generator append the format requirement **after** the user
+  instruction, so a user prompt cannot override it.
+- Make a non-conforming response fail loudly rather than yield zero steps —
+  `parser_compute_stats` already computes template conformance, so the signal exists.
+
+**`max_new_tokens` carries none of this risk.** It is an integer that changes
+generation length and cannot change output format; run B raised it with the default
+prompt untouched and the parser was perfectly happy. The `prompt` fragility is not a
+reason to withhold the budget.
 
 Result: **19 steps, 11–139 s, 10 of 11 reference steps covered.** It emitted 19
 against a ceiling of 20, so it stopped on content rather than configuration, and it
@@ -532,25 +572,31 @@ Observations for the author, not defects.
 
 ## Recommendations
 
-1. **Restore the eight generation parameters and `${values.prompt}` on the active
-   `mga` blueprint.** They existed on `blp_76kyqm…`; `blueprints/mga-tuned.yaml`
-   is a ready-to-register version. Prefer registering a new version and flipping
-   `is_active` over editing in place.
-2. **Raise the default `max_new_tokens` above 256.** At 256 the agent emits ~6
+1. **Expose `max_new_tokens` on the active `mga` blueprint.** It is an integer that
+   cannot affect output format, so it carries none of the parser fragility that
+   caused `prompt` to be rolled back — run B raised it with the default prompt
+   untouched and the parser was fine. Until it is exposed, this repo's example has
+   to pin a superseded blueprint to produce a usable manual.
+2. **Treat `prompt` separately.** It was exposed, found fragile because a
+   format-specifying prompt makes the parser return zero steps, and reverted — a
+   sound call. Appending the format requirement after the user instruction, or
+   failing loudly on a non-conforming response, would make it safe to expose.
+   `blueprints/mga-tuned.yaml` has both wired for reference.
+3. **Raise the default `max_new_tokens` above 256.** At 256 the agent emits ~6
    verbose steps for any video, which reads as a product limitation rather than a
    deliberate choice.
-3. **Reconsider the default instruction.** "10 steps or less" becomes the binding
+4. **Reconsider the default instruction.** "10 steps or less" becomes the binding
    constraint the moment the budget is raised, and nothing asks the model to cover
    the whole recording.
-4. **Consider a `kind` field distinguishing actions from cautions**, or a notes
+5. **Consider a `kind` field distinguishing actions from cautions**, or a notes
    section. Contiguous tiling forces spoken warnings to become numbered steps.
-5. **Emit progress events during processing.** Frame count decoded, transcript
+6. **Emit progress events during processing.** Frame count decoded, transcript
    length, per-node timing would have made both the 563 s failure and this
    truncation diagnosable in one run instead of eight.
-6. **Document the ~5-minute ceiling**, and consider whether 90-second overlapping
+7. **Document the ~5-minute ceiling**, and consider whether 90-second overlapping
    chunks — what `manual-gen-jos` already does, with timestamp offsetting and dedup
    — belong inside the blueprint rather than in each caller.
-7. **Fix the endpoint drift in the RED and OSM example repos.** Their committed
+8. **Fix the endpoint drift in the RED and OSM example repos.** Their committed
    clients call `POST /agents/bundle` and fail for anyone following those READMEs.
 
 ## Repo layout

@@ -67,9 +67,33 @@ BLUEPRINT_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
 # temperature, top_k, top_p, repetition_penalty, seed, stop into the fusion node.
 # DIAGNOSIS ONLY — nothing built on an inactive blueprint can ship.
 BLUEPRINT_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
-# What this script produced on dev at max_frames=64. Generation is deterministic,
-# so a matching digest means you reproduced the run exactly.
-KNOWN_MD5 = "080e551a88f0bdcd857e48557366ae60"
+# TEMPORARY PIN. The defaults below target the SUPERSEDED blueprint, because the
+# active one caps output at a hardcoded max_new_tokens: 256 and produces a
+# truncated manual — 6 steps covering half the video, 4 of 11 reference steps.
+# The superseded blueprint exposes max_new_tokens and prompt, and with them this
+# script produces a complete manual. See the README.
+#
+# REVISIT WHEN the generation parameters are restored on the active blueprint:
+# change BLUEPRINT_DEFAULT back to BLUEPRINT_ACTIVE, keep the values, and update
+# KNOWN_MD5. An inactive blueprint is not a supported target and may be removed.
+BLUEPRINT_DEFAULT = BLUEPRINT_WITH_PARAMS
+
+# The instruction the default configuration uses. Deliberately says what to cover
+# and NOT how to format it: ManualGenerationResultsParserNode owns the output
+# template, and a prompt that specifies its own format (markdown headings, for
+# instance) makes the parser return zero steps. This one parses cleanly.
+DEFAULT_PROMPT = (
+    "Generate a concise, ordered list of every distinct step performed in this "
+    "video, covering the procedure from the first action to the last. Include "
+    "brief steps and steps that are repeated. Use up to 20 steps. Keep each step "
+    "to at most 15 words. Use both what is shown and what is said. Do not invent "
+    "steps that are not shown or stated in the video."
+)
+# What the defaults below produce on dev. Generation is deterministic
+# (temperature 0.0), so a matching digest means you reproduced the run exactly.
+KNOWN_MD5 = "4067a03bc740135bdbee1f0b62cbc511"
+# The active blueprint's truncated output, for comparison.
+TRUNCATED_MD5 = "080e551a88f0bdcd857e48557366ae60"
 
 TERMINAL_EVENTS = ("pod.terminated", "job.completed", "job.failed", "job.canceled")
 
@@ -221,9 +245,13 @@ def show(path: str) -> None:
     print(f"\nmd5 {digest}")
     if digest == KNOWN_MD5:
         print("  matches the reference run exactly (generation is deterministic)")
+    elif digest == TRUNCATED_MD5:
+        print("  this is the TRUNCATED output of the active blueprint (6 steps,\n"
+              "  16-85s of 173s). Its hardcoded max_new_tokens: 256 cannot be\n"
+              "  raised from a bundle — see the README's 'token cap' section.")
     else:
         print(f"  differs from the reference run ({KNOWN_MD5}) — different video,"
-              f" max_frames, or a changed blueprint")
+              f" max_frames, prompt, or a changed blueprint")
 
 
 def main() -> None:
@@ -237,15 +265,18 @@ def main() -> None:
                     help="frames uniformly sampled across the whole video. 64 is the "
                          "reader/preprocessor batch size, so they land in one batch; "
                          "the blueprint default is 16. (default: 64)")
-    ap.add_argument("--blueprint", default=BLUEPRINT_ACTIVE,
-                    help=f"blueprint id or key (default {BLUEPRINT_ACTIVE}, the "
-                         f"active canonical mga)")
-    ap.add_argument("--max-new-tokens", type=int, default=None,
-                    help="raise the output budget. Inert on the active blueprint, "
-                         "which hardcodes 256 — see the README.")
-    ap.add_argument("--prompt", default=None,
-                    help="override the instruction. Only settable on a blueprint "
-                         "that declares values.prompt.")
+    ap.add_argument("--blueprint", default=BLUEPRINT_DEFAULT,
+                    help=f"blueprint id or key. Defaults to {BLUEPRINT_WITH_PARAMS}, "
+                         f"a superseded version that exposes the generation "
+                         f"parameters. Pass 'mga' for the active blueprint, whose "
+                         f"output is truncated at 256 tokens.")
+    ap.add_argument("--max-new-tokens", type=int, default=2048,
+                    help="output budget (default 2048). Inert on the active "
+                         "blueprint, which hardcodes 256.")
+    ap.add_argument("--prompt", default=DEFAULT_PROMPT,
+                    help="the instruction. Do NOT specify an output format in it — "
+                         "the results parser owns the template and a format-"
+                         "overriding prompt makes it return zero steps.")
     ap.add_argument("--name", default="MGA CrossTask tire change")
     ap.add_argument("--output", default="data/mga-output.jsonl")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
