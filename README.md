@@ -111,7 +111,16 @@ models, so there is nothing to fit and nothing to upload.
   virtualenv, no install step, no `requirements.txt`.
 - **`yt-dlp`** to fetch the video, since CrossTask distributes YouTube IDs rather
   than media. Optional: the scripts print the URL and target path if it is missing.
-- **`ffmpeg`/`ffprobe`** only if you want to inspect or re-encode a video yourself.
+- **`ffmpeg`** — **required if you let `yt-dlp` fetch the clip.** The chosen format
+  is separate video and audio streams, and yt-dlp needs ffmpeg to mux them. Without
+  it yt-dlp downloads both fragments, skips the merge, and **still exits 0**,
+  leaving `tire_*.f396.mp4` and `tire_*.f140.m4a` but no `tire_*.mp4`. The script
+  checks for it up front and says so; this line used to call ffmpeg optional, and
+  someone lost time to exactly that.
+
+  ```sh
+  brew install ffmpeg   # or: apt install ffmpeg
+  ```
 
 ## Stage 1 — Select a video
 

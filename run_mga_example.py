@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import glob
 import os
 import subprocess
 import sys
@@ -137,21 +138,62 @@ def api(method: str, url: str, body=None, raw: bool = False):
         sys.exit(f"{method} {url} failed ({e.code}): {e.read().decode(errors='replace')}")
 
 
+def _on_path(name: str) -> bool:
+    return any(os.access(os.path.join(p, name), os.X_OK)
+               for p in os.environ.get("PATH", "").split(os.pathsep))
+
+
 def download_video(path: str) -> None:
+    """Fetch the sample clip with yt-dlp.
+
+    Two things here are not obvious and both have bitten someone:
+
+    FFMPEG IS REQUIRED, not optional. The chosen format is separate video +
+    audio streams, and yt-dlp needs ffmpeg to mux them. Without it, yt-dlp
+    downloads both fragments, SKIPS the merge, and still EXITS 0 — leaving
+    tire_*.f396.mp4 and tire_*.f140.m4a but no tire_*.mp4. The next step then
+    fails with a bare FileNotFoundError several lines later.
+
+    AND `--no-warnings` HID THE REASON. yt-dlp does say "You have requested
+    merging of multiple formats but ffmpeg is not installed", and that flag
+    suppressed it. So it is gone; `--no-update` keeps the version nag quiet
+    without silencing anything that matters.
+    """
     if os.path.exists(path):
         print(f"video already present: {path}")
         return
-    if not any(os.access(os.path.join(p, "yt-dlp"), os.X_OK)
-               for p in os.environ.get("PATH", "").split(os.pathsep)):
+    if not _on_path("yt-dlp"):
         sys.exit("yt-dlp not found. Install it, or download the video manually:\n"
                  f"  {VIDEO_URL}\n  and save it as {path}")
+    if not _on_path("ffmpeg"):
+        sys.exit("ffmpeg not found, and yt-dlp needs it to combine the video and "
+                 "audio streams.\n"
+                 "  brew install ffmpeg   (or)   apt install ffmpeg\n\n"
+                 "Without it yt-dlp exits 0 having downloaded two fragments and "
+                 "merged nothing, which shows up later as a missing file.")
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     print(f"downloading {VIDEO_URL} -> {path} ...")
     subprocess.run([
-        "yt-dlp", "--no-warnings",
+        "yt-dlp", "--no-update",
         "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--merge-output-format", "mp4", "-o", path, VIDEO_URL,
     ], check=True)
+
+    # yt-dlp exiting 0 does not mean the file is there. Say so plainly rather
+    # than letting the next step fail on a missing path.
+    if not os.path.exists(path):
+        stem = os.path.splitext(path)[0]
+        leftovers = sorted(
+            os.path.basename(f) for f in glob.glob(f"{stem}.f*")
+        )
+        sys.exit(
+            f"yt-dlp reported success but {path} does not exist.\n"
+            + (f"  Unmerged fragments present: {', '.join(leftovers)}\n"
+               "  That means the merge step did not run — check that ffmpeg works.\n"
+               if leftovers else "")
+            + f"  Delete {os.path.dirname(path) or '.'}/ and try again, or download "
+              f"the clip by hand:\n    {VIDEO_URL}"
+        )
 
 
 def upload(path: str) -> str:
