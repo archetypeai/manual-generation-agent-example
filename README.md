@@ -26,15 +26,25 @@ video ─► sample frames ─┐
 
 ## Quick start — try the agent in one command
 
-With a dev API key in `.env` — **no `atai_core`, no GPU, no AWS, nothing to fit** —
-run:
+Nothing to build and nothing to fit — **no `atai_core`, no GPU, no AWS**. You do
+need two command-line tools and a dev API key:
 
 ```sh
+brew install yt-dlp ffmpeg     # or: apt install yt-dlp ffmpeg
+cp .env.example .env           # add ATAI_API_KEY and ATAI_API_ENDPOINT
+
 python3 run_mga_example.py
 ```
 
 It fetches the video, uploads it, creates a bundle, runs the agent, streams the
 audit log, downloads the manual and prints it. **~15 minutes.**
+
+**`ffmpeg` is not optional.** The sample clip's best format is separate video and
+audio streams, and yt-dlp needs ffmpeg to mux them. Without it yt-dlp downloads
+both fragments, skips the merge and **still exits 0**, so the failure used to
+surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
+checks for both tools before it starts. (Already have the clip? Point `--video` at
+it and neither tool is needed.)
 
 What comes back, and why this example exists:
 
