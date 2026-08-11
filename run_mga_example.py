@@ -61,23 +61,41 @@ import uuid
 # barely matters because the pipeline resizes every frame to 224x224.
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
 VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
-# The ACTIVE canonical blueprint (is_canonical: true, is_active: true), newest of
-# four mga versions. Default because it is what ships.
-BLUEPRINT_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
-# Superseded (is_active: false) but still runnable. Wires max_new_tokens, prompt,
-# temperature, top_k, top_p, repetition_penalty, seed, stop into the fusion node.
-# DIAGNOSIS ONLY — nothing built on an inactive blueprint can ship.
-BLUEPRINT_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
-# TEMPORARY PIN. The defaults below target the SUPERSEDED blueprint, because the
-# active one caps output at a hardcoded max_new_tokens: 256 and produces a
-# truncated manual — 6 steps covering half the video, 4 of 11 reference steps.
-# The superseded blueprint exposes max_new_tokens and prompt, and with them this
-# script produces a complete manual. See the README.
+# Target the blueprint KEY, not an id.
 #
-# REVISIT WHEN the generation parameters are restored on the active blueprint:
-# change BLUEPRINT_DEFAULT back to BLUEPRINT_ACTIVE, keep the values, and update
-# KNOWN_MD5. An inactive blueprint is not a supported target and may be removed.
-BLUEPRINT_DEFAULT = BLUEPRINT_WITH_PARAMS
+# The platform accepts either, and a key always resolves to whatever is currently
+# canonical and active. That is not a stylistic preference — it is the difference
+# between working and not. `mga` was republished twice in two hours on 2026-08-11,
+# and the id this file used to pin STOPPED RESOLVING mid-session:
+#
+#   resolving blueprint: invalid config for 1 node(s):
+#     - `fusion`: config validation failed: Additional properties are not allowed
+#       ('repetition_penalty', 'seed', 'stop', 'temperature', 'top_k', 'top_p'
+#        were unexpected)
+#
+# Those parameters are wired into that blueprint's own fusion node, so nothing a
+# caller does can avoid them. Reading it, creating a bundle against it and
+# submitting a run all still succeed; the pod dies one second after it starts.
+BLUEPRINT_DEFAULT = "mga"
+
+# Kept for provenance, not for use.
+#
+# blp_0zmce3... was the active canonical when this example was written. It
+# hardcoded max_new_tokens: 256, which truncated the manual at 6 steps covering
+# half the video — the finding this example exists to document.
+BLUEPRINT_HISTORIC_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
+# blp_76kyqm... was superseded but runnable, and exposed max_new_tokens and prompt.
+# This file defaulted to it for exactly that reason. It is now UNRUNNABLE (above).
+BLUEPRINT_DEAD_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
+
+# WHAT CHANGED, and what it means for this example:
+#   max_new_tokens is now settable on the canonical blueprint and defaults to 2048
+#   rather than 256, so the truncation this example documents is FIXED upstream.
+#   `prompt` is NOT settable there — the source connector hardcodes
+#   "Generate a concise, ordered list of distinct steps with 10 steps or less."
+#   so --prompt is accepted, reported as inert by the preflight below, and ignored.
+#   Stage C of the ladder in the README cannot be reproduced until a canonical
+#   blueprint exposes ${values.prompt} again.
 
 # The instruction the default configuration uses. Deliberately says what to cover
 # and NOT how to format it: ManualGenerationResultsParserNode owns the output
@@ -308,17 +326,22 @@ def main() -> None:
                          "reader/preprocessor batch size, so they land in one batch; "
                          "the blueprint default is 16. (default: 64)")
     ap.add_argument("--blueprint", default=BLUEPRINT_DEFAULT,
-                    help=f"blueprint id or key. Defaults to {BLUEPRINT_WITH_PARAMS}, "
-                         f"a superseded version that exposes the generation "
-                         f"parameters. Pass 'mga' for the active blueprint, whose "
-                         f"output is truncated at 256 tokens.")
-    ap.add_argument("--max-new-tokens", type=int, default=2048,
-                    help="output budget (default 2048). Inert on the active "
-                         "blueprint, which hardcodes 256.")
+                    help=f"blueprint id or KEY (default: {BLUEPRINT_DEFAULT!r}). A key "
+                         f"tracks whatever is canonical and active. A pinned id can "
+                         f"stop resolving when the blueprint is republished — which is "
+                         f"exactly what happened to the id this used to default to.")
+    ap.add_argument("--max-new-tokens", type=int, default=4096,
+                    help="output budget (default 4096). The canonical blueprint's own "
+                         "default is 2048, which is enough for this 2:53 clip but not "
+                         "for a longer one; 4096 matches what the companion app sends "
+                         "so the two do not disagree. Raise it if the last step comes "
+                         "back cut mid-sentence.")
     ap.add_argument("--prompt", default=DEFAULT_PROMPT,
-                    help="the instruction. Do NOT specify an output format in it — "
-                         "the results parser owns the template and a format-"
-                         "overriding prompt makes it return zero steps.")
+                    help="the instruction. NOTE: the canonical blueprint currently "
+                         "HARDCODES its prompt, so this is reported inert by the "
+                         "preflight and then ignored. Do not specify an output format "
+                         "in it either — the results parser owns the template, and a "
+                         "format-overriding prompt makes it return zero steps.")
     ap.add_argument("--name", default="MGA CrossTask tire change")
     ap.add_argument("--output", default="data/mga-output.jsonl")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
