@@ -46,35 +46,65 @@ surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
 checks for both tools before it starts. (Already have the clip? Point `--video` at
 it and neither tool is needed.)
 
-What comes back, and why this example exists:
+What comes back. **D is what you get today**; A–C are the same video on blueprint
+versions that no longer run, kept because they are the evidence for what the
+instruction is worth:
 
-| | A — active blueprint | B — `max_new_tokens: 2048` | C — B + coverage prompt |
-|---|---|---|---|
-| Steps emitted | 6 | 10 | **19** |
-| Coverage | 16–85 s | 16–120 s | **11–139 s** |
-| Reference steps found | **4 / 11** | **10 / 11** | 10 / 11 |
-| …at IoU ≥ 0.5 | 3 / 11 | 4 / 11 | 5 / 11 |
-| Final step | cut mid-clause | clean | clean |
-| md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` |
+| | A — capped | B — A + tokens | C — B + prompt | **D — current blueprint** |
+|---|---|---|---|---|
+| blueprint | `blp_0zmce3…` | `blp_76kyqm…` | `blp_76kyqm…` | **`mga` → `blp_5wtsdwmp…`** |
+| caller's prompt honoured | n/a | n/a | **yes** | **no — hardcoded** |
+| `max_new_tokens` | 256 (fixed) | 2048 | 2048 | 4096 |
+| Steps emitted | 6 | 10 | **19** | 10 |
+| Coverage | 16–85 s | 16–120 s | **11–139 s** | 11–135 s |
+| Words | 83 | 152 | 219 | 176 |
+| Recall @ IoU ≥ 0.3 | 4/11 | 8/11 | 9/11 | **10/11** |
+| Recall @ IoU ≥ 0.5 | 3/11 | 4/11 | **5/11** | 4/11 |
+| Actions bundled per step | — | — | **1.6 avg, 4 max** | 3.2 avg, **7 max** |
+| Safety cautions as their own step | 1 | 1 | **4** | 1 |
+| md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` | — |
 
-**A is what ships. C is what the model can do, and what the command above
-produces.** Everything between them is configuration — two values that a superseded
-version of this blueprint exposed and the current one doesn't. The single largest
-gain is `max_new_tokens` alone: **4/11 → 10/11 reference steps**, prompt untouched.
+**Read that table twice, because the metric and the manual disagree.** D has the
+best IoU recall of any run here — 10/11 — and is the worst manual. Recall rewards
+fewer, longer steps: each one overlaps more of a reference interval. What it cannot
+see is that D compresses the first 24 seconds into a single step containing seven
+actions, and drops two spoken safety cautions entirely:
+
+```
+in C, their own steps:   "Never put any object or body part under the vehicle when using the jack."
+                         "Do not touch the disc wheels or brakes as they can be hot."
+in D:                    absent
+```
+
+An operator cannot tick off "apply the parking brake" separately from "switch off
+the ignition", and each step gets one frame thumbnail however many actions it
+contains. If you take one thing from this example, take that: **evaluate a manual
+by whether it can be followed, not only by temporal recall.**
+
+The cause is a single line in the current blueprint — the instruction is fixed at
+*"Generate a concise, ordered list of distinct steps with 10 steps or less."* and
+`prompt` is not settable, so D is capped at 10 steps by wording rather than by
+content. Full write-up with both configurations and both outputs in
+[`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md);
+tracked as **PLDEV-1730**.
+
+⚠️ **`max_new_tokens: 2048`, the blueprint's own default, returns an EMPTY manual on
+this video** — `job.completed`, no error row, `results: []`, 39 bytes
+([`reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.jsonl`](reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.jsonl)).
+That is why the script sends 4096. Anyone relying on defaults gets nothing, silently.
 
 Run A is confirmed across **three runs on two machines**, byte-identical each time
 (generation is deterministic at `temperature: 0.0`).
 
-Careful with "reference steps found": it means *some non-advisory prediction overlaps
-the reference interval*. MGA tiles the timeline with no gaps, so every interval
-necessarily overlaps something — an early draft of this table claimed 11/11 for C
-because a purely temporal match credited *"Do not touch the disc wheels or brakes"*
-as the match for `unscrew wheel`. [`evaluate.py`](evaluate.py) excludes advisories
-and reports IoU ≥ 0.3 / 0.5 alongside, because bare overlap is the most generous
-reading available. More steps is also not strictly better: C's finer segmentation
-scores a *lower* mean IoU (0.46) than A's 0.60 across the four steps A found.
+Careful with recall: it means *some non-advisory prediction overlaps the reference
+interval*. MGA tiles the timeline with no gaps, so every interval necessarily
+overlaps something — an early draft of this table claimed 11/11 for C because a
+purely temporal match credited *"Do not touch the disc wheels or brakes"* as the
+match for `unscrew wheel`. [`evaluate.py`](evaluate.py) excludes advisories and
+reports IoU ≥ 0.3 / 0.5 alongside, because bare overlap is the most generous reading
+available.
 
-All three outputs are committed under [`reference/`](reference), so the comparison is
+All outputs are committed under [`reference/`](reference), so the comparison is
 checkable offline with no API key:
 
 ```sh
@@ -84,25 +114,46 @@ python3 evaluate.py --compare reference/*.jsonl
 ## The end-to-end example, stage by stage
 
 ```
-video + reference steps ─> 1 select ──> 2 fetch ──> 3 configure ──> 4 run ──> 5 evaluate
-                          (suitability)  (video +    (blueprint,     (platform)  (offline)
-                                          annotations) values, prompt)
+video + reference steps ─> 1 select ──> 2 configure ──> 3 run ──> 4 evaluate
+                          (suitability)  (blueprint,     (platform)  (offline)
+                                          values, prompt)
+                                              ▲
+                                   every quality decision, and
+                                   whichever control is currently
+                                   out of reach
 ```
 
-Five stages, not seven. RED and OSM spend stages 2–5 producing a fitted classifier;
-MGA is zero-shot, so there is nothing to fit, no grid to search and no artifact to
-upload. What replaces them is **Stage 3**, where every quality decision in this
-example lives — and where the one real defect sits.
+Four stages of work, not seven. RED and OSM spend most of theirs producing a fitted
+classifier; MGA is zero-shot, so there is nothing to fit, no grid to search and no
+artifact to upload. What replaces them is **configuration** — and the recurring
+lesson of this example is that the configuration you need has twice been the
+configuration the blueprint does not expose:
 
-Every stage is a standalone script. Stages 1, 2 and 5 need no API key at all.
+| when | the control out of reach | consequence | now |
+|---|---|---|---|
+| as written | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 2048 |
+| today | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | open — **PLDEV-1730** |
+
+So read Stage 3 as the general case rather than a bug report about one value: the
+platform accepts any `values` you send and silently ignores the ones the blueprint
+does not wire, so **the first thing worth doing on any run is checking which of your
+settings are real.** The script does that before it spends anything:
+
+```
+WARNING: ['prompt'] is not wired on this blueprint and will be silently ignored.
+```
+
+Every stage is a standalone script. All but the run itself need no API key.
 
 | Stage | Script | Needs |
 |---|---|---|
 | 1 Select a video | `evaluate.py --compare` (offline), manual inspection | nothing |
-| 2 Fetch | `run_mga_example.py --download-only` | nothing |
-| 3 Configure | `run_mga_example.py --dry-run` | nothing |
-| 4 Run | `run_mga_example.py` | dev API key |
-| 5 Evaluate | `evaluate.py` | nothing |
+| 2 Configure | `run_mga_example.py --dry-run` | nothing |
+| 3 Run | `run_mga_example.py` | dev API key |
+| 4 Evaluate | `evaluate.py` | nothing |
+
+The numbered stage headings below still read 1–5, with fetching the video as its own
+stage. That is the order the scripts run in.
 
 ## Prerequisites
 
@@ -206,19 +257,25 @@ as a backstop. Each video is copyrighted by its uploader.
 ## Stage 3 — Configure the agent
 
 This is where MGA's four missing stages went, and where the whole example turns.
-Three values matter, and one of them is broken on the shipped blueprint.
+Three values matter; what is broken about them has changed twice.
 
 ```sh
 python3 run_mga_example.py --dry-run     # print the exact payload, call nothing
 ```
 
-| Value | This example uses | Notes |
-|---|---|---|
-| `max_frames` | **64** | blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see below. |
-| `max_new_tokens` | **2048** | the blueprint default is **256**, and the active blueprint does not expose the value. This is the defect. |
-| `prompt` | a coverage instruction | also not exposed on the active blueprint, and genuinely risky — see the parser note in Stage 3c. |
+| Value | This example sends | Honoured today? | Notes |
+|---|---|---|---|
+| `max_frames` | **64** | ✅ | Blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see 3d. |
+| `max_new_tokens` | **4096** | ✅ | Was the defect: the shipped blueprint hardcoded **256** and truncated the manual. **Fixed upstream** — now settable, default 2048. But 2048 returns an EMPTY manual on this video, so 4096. |
+| `size` | not sent (224) | ✅ | Every frame is resized to `size × size` before the model sees it. `null` keeps the source resolution. Untested here; the obvious lever if on-screen text is unreadable. |
+| `prompt` | a coverage instruction | ❌ **ignored** | Now the defect. The blueprint hardcodes its instruction and does not expose `${values.prompt}`, so this is accepted, reported inert by the preflight, and discarded. **PLDEV-1730.** |
 
-### 3a. The token cap is the whole story
+**The defect moved.** When this example was written the problem was the token cap
+and the prompt was the fix. The cap is now fixed and the prompt is the problem. The
+sections below document the cap for the record — the reasoning transfers directly,
+because both are the same failure: **a generation control the caller cannot reach.**
+
+### 3a. The token cap was the whole story  ⏮ HISTORIC — fixed upstream
 
 **The cap is `max_new_tokens: 256`.** Not inferred — it is the documented default
 of a superseded version of this blueprint, annotated there as
@@ -249,7 +306,7 @@ the bundle and connected to nothing. Both workarounds fail *silently*:
 `nodes: {fusion: {config: …}}` returns 201 with the `nodes` key absent from the
 response entirely.
 
-### This is a regression, not a missing feature
+### This was a regression, not a missing feature  ⏮ HISTORIC
 
 Four `mga` blueprints exist. Exactly one exposed the generation parameters, for
 about **93 minutes** on 7 August:
@@ -286,7 +343,7 @@ blueprint, and whether they can be restored.**
   *key* `mga` resolves to the active version. Bundles pin `blueprint_id`, so an
   existing bundle keeps working when a new version becomes active.
 
-### 3b. What the model does when the cap is lifted
+### 3b. What the model does when the cap is lifted  ⏮ HISTORIC — needs `prompt`
 
 `blueprints/mga-tuned.yaml` proposes restoring these values on the active
 blueprint. Until that happens, the superseded blueprint can be targeted by **id**
@@ -504,7 +561,7 @@ Four properties, none of them documented in the blueprint:
   three runs. **MGA performs segmentation, not event detection.** There is no
   "nothing happening here" option, so every span must be labelled — which is why
   a spoken safety caution gets its own step (see
-  [Reading the output as a manual](#reading-the-output-as-a-manual)).
+  [Reading the output as a manual](#3c-reading-the-output-as-a-manual)).
 
 ## Stage 5 — Evaluate
 
@@ -686,6 +743,19 @@ python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
 
 ## Platform behavior worth knowing
 
+- **Reference a blueprint by KEY, not by id.** `POST /agents/bundles` and
+  `GET /agents/blueprints/{…}` both accept either, and a key resolves to whatever is
+  canonical and active. Three `mga` versions were published in about two hours on
+  2026-08-11, and a pinned id **stopped resolving mid-session**: the superseded
+  blueprint wires generation parameters into its own `fusion` node that the node
+  schema no longer accepts, so it now fails with `resolving blueprint: invalid
+  config for 1 node(s)`. Reading it, creating a bundle and submitting a run all
+  still succeed; the pod dies one second after it starts. Pin an id only to
+  reproduce a specific past run.
+- **A run can complete successfully and return nothing.** `max_new_tokens: 2048` —
+  the current blueprint's own default — produced `{"id":"…","results":[]}` on this
+  173 s video: `job.completed`, no ERROR row, 39 bytes, after 543 s of generation.
+  Count the steps; neither the status nor the logs will tell you.
 - **The bundle endpoint is plural.** `POST /agents/bundle` → **404**; use
   `POST /agents/bundles`. The clients committed in the RED and OSM example repos
   use the singular form and **fail against current dev**.
@@ -706,11 +776,14 @@ python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
   across every run. Total wall clock 877–886 s for a 173 s video.
 - **Dev serializes these jobs.** Four concurrent submissions produced queue waits
   of **799–817 s**, not parallelism. Budget a sweep as the sum of its runs.
-- **Videos over ~5 minutes fail.** A 563 s video at default settings ran 5 min 13 s
-  then died: `pipeline execution failed: Newton generation event stream closed
-  without a terminal event`, exit 1. Note this is *not* a context limit — at
-  `max_frames: 16` the video occupies 392 visual tokens, **0.15% of the 256K
-  window**.
+- **Videos over ~5 minutes fail**, and the same error appears on much shorter
+  inputs. A 563 s video at default settings ran 5 min 13 s then died:
+  `pipeline execution failed: Newton generation event stream closed without a
+  terminal event`, exit 1. This is *not* a context limit — at `max_frames: 16` the
+  video occupies 392 visual tokens, **0.15% of the 256K window**. The companion app
+  hit the identical error on **90-second** chunks, clustered at 138–175 s into a
+  chunk while other chunks in the same run ran 384–461 s and finished, which looks
+  like an inactivity timeout on the generation stream rather than a duration cap.
 - **`max_frames` has no validation at all.** 16, 64, 256, 501, 512, 1024 and `-1`
   (keep every frame) were all accepted with `status: ready`. The arithmetic ceiling
   from `preprocessor_max_pixels` (24 Mi at `size: 224`) is 501 frames and the API
@@ -743,32 +816,48 @@ Observations for the author, not defects.
 
 ## Recommendations
 
-1. **Expose `max_new_tokens` on the active `mga` blueprint.** It is an integer that
-   cannot affect output format, so it carries none of the parser fragility that
-   caused `prompt` to be rolled back — run B raised it with the default prompt
-   untouched and the parser was fine. Until it is exposed, this repo's example has
-   to pin a superseded blueprint to produce a usable manual.
-2. **Treat `prompt` separately.** It was exposed, found fragile because a
-   format-specifying prompt makes the parser return zero steps, and reverted — a
-   sound call. Appending the format requirement after the user instruction, or
-   failing loudly on a non-conforming response, would make it safe to expose.
-   `blueprints/mga-tuned.yaml` has both wired for reference.
-3. **Raise the default `max_new_tokens` above 256.** At 256 the agent emits ~6
-   verbose steps for any video, which reads as a product limitation rather than a
-   deliberate choice.
-4. **Reconsider the default instruction.** "10 steps or less" becomes the binding
-   constraint the moment the budget is raised, and nothing asks the model to cover
-   the whole recording.
+Numbers 1 and 3 have since been implemented; they are kept with their outcome so the
+list reads as a record rather than a wish.
+
+1. ~~**Expose `max_new_tokens` on the active `mga` blueprint.**~~ ✅ **Done.** It is
+   settable on the canonical blueprint. This was the single largest quality gain
+   measured here: 4/11 → 8/11 reference steps, prompt untouched.
+2. **Expose `prompt`.** Still open — **PLDEV-1730**, and now the binding constraint.
+   The current blueprint hardcodes *"…10 steps or less"*, which caps the manual at
+   10 steps by wording rather than by content, bundles up to seven actions into one
+   step, and **drops two spoken safety cautions**. It was exposed once, found
+   fragile because a format-specifying prompt makes the parser return zero steps,
+   and reverted — a sound call at the time. Appending the format requirement after
+   the caller's instruction, or failing loudly on a non-conforming response, makes
+   it safe. Note the fix does not require relaxing `text_extensions: []`: keep that,
+   and change `default_text` to `${values.prompt}` with the current sentence as the
+   default. Full evidence in
+   [`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md).
+3. ~~**Raise the default `max_new_tokens` above 256.**~~ ✅ **Done** — now 2048.
+   **But 2048 returns an empty manual on this video**: `job.completed`, no error,
+   `results: []`. A default that silently produces nothing is worse than one that
+   truncates visibly, because nothing in the status, the logs or the exit code
+   distinguishes it from success.
+4. **Reconsider the default instruction.** "10 steps or less" became the binding
+   constraint the moment the budget was raised — exactly as predicted here — and
+   nothing asks the model to cover the whole recording.
 5. **Consider a `kind` field distinguishing actions from cautions**, or a notes
-   section. Contiguous tiling forces spoken warnings to become numbered steps.
+   section. Contiguous tiling forces spoken warnings to become numbered steps, and
+   when the step budget is tight they are the first thing dropped.
 6. **Emit progress events during processing.** Frame count decoded, transcript
-   length, per-node timing would have made both the 563 s failure and this
-   truncation diagnosable in one run instead of eight.
+   length, per-node timing would have made the 563 s failure, this truncation and
+   the empty-result case diagnosable in one run instead of eight.
 7. **Document the ~5-minute ceiling**, and consider whether 90-second overlapping
-   chunks — what `manual-gen-jos` already does, with timestamp offsetting and dedup
-   — belong inside the blueprint rather than in each caller.
+   chunks belong inside the blueprint rather than in each caller. The companion app
+   implements them and hits `event stream closed without a terminal event` on
+   90-second chunks anyway, clustered at 138–175 s while other chunks in the same
+   run survive 384–461 s — so chunking alone does not avoid it.
 8. **Fix the endpoint drift in the RED and OSM example repos.** Their committed
    clients call `POST /agents/bundle` and fail for anyone following those READMEs.
+9. **Keep blueprint ids resolvable, or document that they are not.** A pinned id
+   stopped working mid-session when the node schema changed under it. Callers who
+   followed the obvious advice — pin a version for reproducibility — were the ones
+   who broke.
 
 ## Repo layout
 
@@ -811,49 +900,64 @@ Observations for the author, not defects.
   10/11 recall while dropping the 4 caution entries is untested.
 - **Chunking for long videos**, for the ~5-minute ceiling.
 
-## Dependency risk, and what to change when this is fixed
+## Dependency risk — the predicted failure, and what actually happened
 
-**This example depends on a blueprint that should not exist much longer.**
-`blp_76kyqm4vjp9pt8tvfz8tks7x6t` is `is_active: false` — a superseded version kept
-alive only because it still resolves by id. Someone tidying up old blueprints would
-be entirely justified in deleting it, and nothing would warn them that an example
-repo points at it.
+This section used to warn that the example depended on a superseded blueprint kept
+alive only because it still resolved by id, and that *"someone tidying up old
+blueprints would be entirely justified in deleting it, and nothing would warn them
+that an example repo points at it."*
 
-If that happens before `max_new_tokens` is exposed on the active blueprint:
+**That happened on 2026-08-11**, though not by deletion. Three `mga` versions were
+published in about two hours, and the `fusion` node's schema stopped accepting the
+generation parameters the pinned blueprint wires in from its own defaults. It now
+fails at resolution:
 
-- `python3 run_mga_example.py` **breaks** — the default target disappears.
-- `python3 run_mga_example.py --blueprint mga` still works but yields the truncated
-  6-step manual, i.e. the example demonstrates the defect instead of the capability.
-- The committed outputs in [`reference/`](reference) become **the only record of
-  what MGA produced under a working configuration.** That is a large part of why
-  they are checked in rather than regenerated on demand, and why `evaluate.py` scores
-  files rather than requiring a live run.
+```
+resolving blueprint: invalid config for 1 node(s):
+  - `fusion`: config validation failed: Additional properties are not allowed
+    ('repetition_penalty', 'seed', 'stop', 'temperature', 'top_k', 'top_p'
+     were unexpected)
+```
 
-So treat `reference/` as evidence, not as a cache.
+Reading it, creating a bundle against it and submitting a run all still succeed. The
+pod dies one second after it starts. Nothing a caller sends can avoid it, because the
+rejected properties are in the blueprint document rather than in the payload.
 
-### Migration checklist
+Two things follow, and both are more general than this repo:
 
-When `max_new_tokens` (and optionally `prompt`) are available on the active `mga`
-blueprint, this repo should be updated as follows. Nothing here is guesswork — the
-values are already parameterised, so it is a small change.
+- **Pinning a version for reproducibility is what broke.** The blueprint key `mga`
+  resolves to whatever is canonical and active and survived every republication;
+  the id did not. Both scripts now default to the key.
+- **The committed outputs in [`reference/`](reference) are the only record of what
+  MGA produced with a caller-supplied prompt**, because that configuration can no
+  longer be run at all. That is why they are checked in rather than regenerated on
+  demand, and why `evaluate.py` scores files rather than requiring a live run. Treat
+  `reference/` as evidence, not as a cache.
 
-| # | Change | Where |
+### What was migrated, and what is left
+
+`max_new_tokens` is now exposed on the canonical blueprint, so most of the old
+checklist is done:
+
+| # | Change | Status |
 |---|---|---|
-| 1 | Point the example at the active blueprint | `run_mga_example.py` — `BLUEPRINT_DEFAULT = BLUEPRINT_ACTIVE` (line ~79) |
-| 2 | Update `BLUEPRINT_ACTIVE` if a *new* version was registered rather than the current one edited | `run_mga_example.py` ~65, `repro_truncation.py` ~56 |
-| 3 | Re-run the example and update the expected digest | `run_mga_example.py` — `KNOWN_MD5` (~94) |
-| 4 | Keep `--max-new-tokens 2048` as the default only if the blueprint's own default is still 256 | `run_mga_example.py` ~273 |
-| 5 | Drop `--prompt` from the defaults **if** `prompt` is still not exposed; keep it if it is | `run_mga_example.py` ~276 |
-| 6 | Delete the "defaults are pinned to a superseded blueprint" callout | [Stage 4](#stage-4--create-the-agent-and-run-it) |
-| 7 | Re-frame the headline: the defect becomes historical, and A/B/C becomes a before/after rather than a workaround | [Quick start](#quick-start--try-the-agent-in-one-command), [Stage 3a](#3a-the-token-cap-is-the-whole-story) |
-| 8 | Delete this section | here |
+| 1 | Point the example at the active blueprint | ✅ both scripts default to the key `mga` |
+| 2 | Track new blueprint versions | ✅ solved by using the key rather than an id |
+| 3 | Re-run and update the expected digest | ⚠️ `KNOWN_MD5` describes a run that can no longer be reproduced — see below |
+| 4 | Revisit the `--max-new-tokens` default | ✅ 4096, because the blueprint's own 2048 returns an empty manual |
+| 5 | Decide what to do about `--prompt` | ⏳ still sent, still ignored, preflight warns — **PLDEV-1730** |
+| 6–7 | Re-frame the headline and Stage 3 | ✅ the defect moved from the token cap to the prompt |
+| 8 | Delete this section | ⏳ when PLDEV-1730 lands |
 
-**What should *not* change:** `repro_truncation.py` keeps defaulting to the active
-blueprint and keeps its three committed baselines. Once the fix lands it will start
-reporting `0/3 symptoms confirmed` against a live run, which is exactly what you want
-— it becomes the regression test proving the fix works. Its wired-value preflight
-already flips from `NOT WIRED` to `honoured` with no code change, because it reads
-the blueprint document rather than hardcoding key names.
+**`KNOWN_MD5` is stale by design.** It is the digest of the 19-step run, which needed
+a caller-supplied prompt. Nothing on the current blueprint can reproduce it, so the
+script will report a mismatch. Left in place deliberately: it is the artifact
+PLDEV-1730 should restore, and a green digest is how you will know it did.
+
+**What should *not* change:** `repro_truncation.py` keeps its committed baselines.
+Its wired-value preflight reads the blueprint document rather than hardcoding key
+names, so it flipped from reporting `max_new_tokens` as `NOT WIRED` to `honoured`
+with no code change — and it will do the same for `prompt`.
 
 ## Cleanup
 
