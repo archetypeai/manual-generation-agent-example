@@ -321,11 +321,10 @@ def main() -> None:
                     help="fetch the video into data/clips/ first, then run")
     ap.add_argument("--download-only", action="store_true",
                     help="fetch the video into data/clips/ and stop — no API calls")
-    ap.add_argument("--max-frames", type=int, default=65,
-                    help="frames uniformly sampled across the whole video. The "
-                         "blueprint default is 16. Note 64 is the reader and "
-                         "preprocessor batch size, so 65 deliberately spills into a "
-                         "second batch. (default: 65)")
+    ap.add_argument("--max-frames", type=int, default=64,
+                    help="frames uniformly sampled across the whole video. 64 is the "
+                         "reader and preprocessor batch size, so they land in one "
+                         "batch; the blueprint default is 16. (default: 64)")
     ap.add_argument("--blueprint", default=BLUEPRINT_DEFAULT,
                     help=f"blueprint id or KEY (default: {BLUEPRINT_DEFAULT!r}). A key "
                          f"tracks whatever is canonical and active. A pinned id can "
