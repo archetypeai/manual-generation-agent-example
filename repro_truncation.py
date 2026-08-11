@@ -1,6 +1,41 @@
 #!/usr/bin/env python3
 """Reproduce MGA's output truncation: no predictions for reference steps 5-11.
 
+⚠️  HISTORIC AS OF 2026-08-11 — READ THIS FIRST
+================================================================================
+The defect this script reproduces HAS BEEN FIXED, and the blueprints it targets
+no longer behave as described. Kept because the committed baselines are the
+evidence for the finding, and because the offline path still works.
+
+  WHAT STILL WORKS
+    --analyse on a committed reference file. No API key, no GPU, no network.
+    That is the majority of this script's value and it is unaffected.
+
+  WHAT NO LONGER HOLDS
+    * max_new_tokens IS now wired on the canonical blueprint and defaults to
+      2048, not 256. The central claim below — that setting it does nothing —
+      was true of the blueprint of the day and is false now.
+    * The comparison blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t is UNRUNNABLE. It
+      wires generation parameters into its own fusion node that the node schema
+      no longer accepts, so any run against it dies one second after the pod
+      starts with `resolving blueprint: invalid config for 1 node(s)`.
+    * A live run therefore reproduces nothing: against the current blueprint the
+      symptoms are absent, and against the old one the job fails outright.
+
+  WHAT REPLACED IT
+    The same class of defect, one parameter over: `prompt` is now the control the
+    caller cannot reach. The blueprint hardcodes "…10 steps or less", which caps
+    the manual at 10 steps by wording rather than content and drops two spoken
+    safety cautions. Tracked as PLDEV-1730. See
+    reference/COMPARISON-prompt-honoured-vs-hardcoded.md.
+
+  DO NOT "FIX" THIS SCRIPT BY UPDATING THE SYMPTOMS
+    It is a record of a specific defect against specific committed outputs. Its
+    wired-value preflight reads the blueprint document rather than hardcoding key
+    names, so it already reports max_new_tokens as honoured rather than NOT WIRED
+    with no code change — and it will do the same for prompt when that lands.
+================================================================================
+
 Single file, stdlib only, self-contained — the reference step intervals are
 embedded, so no CrossTask download is needed to check the symptoms.
 
@@ -22,12 +57,15 @@ judging itself finished.
 The script prints each symptom as a CONFIRMED / NOT REPRODUCED line, so a
 colleague can tell at a glance whether they see the same thing.
 
-WHY --max-new-tokens 1024 IS WORTH RUNNING
+WHY --max-new-tokens 1024 WAS WORTH RUNNING  (no longer true — see the banner)
 
-`max_new_tokens` is the parameter that would raise the cap, and it is accepted by
-the API while having no effect: the `mga` blueprint's fusion node config is only
-`{model: ...}` and never references `${values.max_new_tokens}`, so the value is
-stored on the bundle and wired to nothing.
+At the time, `max_new_tokens` was the parameter that would raise the cap, and it
+was accepted by the API while having no effect: the `mga` blueprint's fusion node
+config was only `{model: ...}` and never referenced `${values.max_new_tokens}`, so
+the value was stored on the bundle and wired to nothing.
+
+The fusion node now reads `max_new_tokens: ${values.max_new_tokens}`, so this
+demonstration no longer demonstrates anything. The preflight will say so.
 
 You do not need two runs to show this. Generation is deterministic and the
 baseline output is committed to this repo, so a single run with the value set,
@@ -351,6 +389,23 @@ def main() -> None:
         n = analyse(args.analyse)
         print(f"\n{n}/3 symptoms confirmed.")
         return
+
+    # A live run costs ~15 minutes and reproduces nothing any more. Say so BEFORE
+    # spending it, not in a docstring nobody opened.
+    print(
+        "\n  ⚠️  This reproduces a defect that has since been FIXED.\n"
+        "     max_new_tokens is now wired on the canonical blueprint (default 2048),\n"
+        "     so the symptoms below will not appear. The comparison blueprint\n"
+        "     blp_76kyqm4vjp9pt8tvfz8tks7x6t no longer resolves at all.\n"
+        "     Offline analysis of the committed baselines still works and is free:\n"
+        f"       python3 {os.path.basename(__file__)} --analyse "
+        "reference/mga-output-i2JWkDyg26A-mf64.jsonl\n"
+        "     Continuing in 5s — Ctrl-C to stop.\n"
+    )
+    try:
+        time.sleep(5)
+    except KeyboardInterrupt:
+        sys.exit("  stopped.")
 
     bp = api("GET", f"{env()[1]}/agents/blueprints/{args.blueprint}")
     values = {"max_frames": args.max_frames}
