@@ -38,3 +38,6 @@ __pycache__/
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Internal design doc — kept locally, not published with the example.
+docs/Manual Generation Agent.md
