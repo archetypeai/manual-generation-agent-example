@@ -583,13 +583,39 @@ mid-clause. It also shows verbosity trading directly against coverage: `mf=32`
 produced richer descriptions and 4 s *less* coverage. A `max_frames` sweep is
 therefore deferred — it cannot measure anything while the cap binds.
 
-## Reproducing
+## Reproducing — LEGACY
+
+> **⚠️ LEGACY. Kept for the record, not currently reproducible.**
+>
+> This section reproduces a **token-cap defect that no longer exists**, using a
+> **blueprint that no longer runs**. Both changed on 2026-08-11:
+>
+> - The canonical `mga` blueprint now exposes `max_new_tokens` and defaults it to
+>   **2048** instead of the hardcoded 256 this section is about. The defect is
+>   fixed upstream.
+> - The blueprint these steps target, `blp_76kyqm4vjp9pt8tvfz8tks7x6t`, is
+>   **unrunnable**. It wires `repetition_penalty`, `seed`, `stop`, `temperature`,
+>   `top_k` and `top_p` into its own `fusion` node, and the platform stopped
+>   accepting those properties. Reading it, creating a bundle and submitting a run
+>   all still succeed; the pod dies one second after it starts with
+>   `resolving blueprint: invalid config for 1 node(s)`.
+> - `prompt` is **not settable** on the canonical blueprint — the source connector
+>   hardcodes its instruction — so the ladder's rung C cannot be built at all.
+>
+> **The offline path below still works** and is worth keeping: it analyses the
+> committed reference outputs and needs no API key, no GPU and no network. The
+> live paths (2 and 3) will fail at blueprint resolution.
+>
+> Not deleted because the committed outputs, digests and reference intervals are
+> the evidence for the finding, and the finding was real. Delete it once a
+> canonical blueprint exposes `${values.prompt}` and this can be rewritten against
+> something that runs.
 
 [`repro_truncation.py`](repro_truncation.py) isolates the defect and reports each
 symptom as `CONFIRMED` / `NOT REPRODUCED`. Single file, stdlib only, with the 11
 reference intervals embedded so **no CrossTask download is needed**.
 
-### 1. Offline — instant, no API key, no GPU
+### 1. Offline — instant, no API key, no GPU  ✅ still works
 
 ```sh
 python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl
@@ -615,7 +641,7 @@ Coverage is judged against the **annotated procedure's end (132.2 s)**, not the
 video duration — the tail is outro with no steps in it, so measuring to 173.2 s
 would penalize output that is actually complete.
 
-### 2. Live against dev — ~15 minutes
+### 2. Live against dev — ~15 minutes  ❌ fails at blueprint resolution
 
 ```sh
 printf 'ATAI_API_KEY=<key>\nATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app\n' > .env
@@ -642,7 +668,7 @@ That check reads the blueprint document rather than hardcoding known keys, so it
 keeps working after a fix: once `max_new_tokens` is restored it reports `honoured`
 with no code change, which makes it a regression test too.
 
-### 3. The full ladder
+### 3. The full ladder  ❌ rungs B and C are unreachable
 
 ```sh
 # A — the shipped defect: 6 steps, 4/11 reference steps, output truncated
