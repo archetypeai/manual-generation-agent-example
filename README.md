@@ -405,18 +405,19 @@ blueprint, and whether they can be restored.**
 
 ### 3b. What the model does when the cap is lifted  ⏮ HISTORIC — needs `prompt`
 
-`blueprints/mga-tuned.yaml` proposes restoring these values on the active
-blueprint. Until that happens, the superseded blueprint can be targeted by **id**
-rather than key:
+`blueprints/mga-tuned.yaml` proposed restoring these values on the active
+blueprint. That has since happened — both `max_new_tokens` and `prompt` are wired
+on the canonical blueprint — so this rung is reproducible with the plain default
+target and no id pinning:
 
 ```sh
-python3 run_mga_example.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
-    --max-new-tokens 2048
+python3 run_mga_example.py --max-new-tokens 16384
 ```
 
-**Diagnosis only** — that blueprint is `is_active: false`, so nothing built on it
-can ship and it may be removed without notice. The scripts print a warning when
-you point them at it.
+The id this section used to name, `blp_76kyqm4vjp9pt8tvfz8tks7x6t`, is now
+**unrunnable**: it wires sampling parameters into its own fusion node that the
+node schema no longer accepts, so a run against it returns `202` and then dies at
+resolution. Do not use it for diagnosis or anything else.
 
 #### Run B — raising the budget alone
 
@@ -541,26 +542,36 @@ python3 run_mga_example.py
 
 Upload → create a bundle → run → stream `/logs` → download → print. **~15 minutes**:
 about 7.5 min of model download and load on *every* run (nothing is cached between
-runs), then roughly 2.5× realtime processing. Dev runs these one at a time.
+runs), then roughly 2.5× realtime processing.
+**Run one at a time.** Dev looked like it serialised jobs — four submissions once
+produced ~800 s queue waits — but three concurrent runs on 2026-08-13 came up as
+three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
 
-> ### The defaults are pinned to a superseded blueprint — read this
+> ### The defaults target the `mga` KEY — and why that matters
 >
-> `run_mga_example.py` defaults to **`blp_76kyqm4vjp9pt8tvfz8tks7x6t`** with
-> `max_new_tokens: 2048` and the coverage instruction, because the **active**
-> blueprint caps output at a hardcoded `max_new_tokens: 256` and returns a truncated
-> manual — 6 steps covering half the video. The superseded blueprint exposes the
-> generation parameters, so the example produces a complete manual today.
+> `run_mga_example.py` sends `"blueprint": "mga"`, not an id. A key resolves to
+> whatever is canonical and active; a pinned id does not survive republication, and
+> `mga` was republished three times in the week of 2026-08-11.
 >
-> **This is a temporary pin.** That blueprint is `is_active: false`: not a supported
-> target, and removable at any time. When the generation parameters are restored on
-> the active blueprint, flip `BLUEPRINT_DEFAULT` back to `BLUEPRINT_ACTIVE` and
-> update `KNOWN_MD5`. Both are marked in the script.
+> A superseded id fails **late and quietly**: reading it works, the bundle returns
+> `201 ready`, `/run` returns `202 running`, and then the pod dies one second in
+> with `resolving blueprint: invalid config for 1 node(s)`. This example used to
+> default to such an id — `blp_76kyqm…`, pinned to reach `max_new_tokens` and
+> `prompt` before they were exposed — and every run failed until it was switched
+> back to the key.
+>
+> Pin an id only to reproduce one specific past run, and expect it to stop working:
 >
 > ```sh
-> python3 run_mga_example.py --blueprint mga       # the active blueprint, truncated
+> python3 run_mga_example.py --blueprint <blueprint_id>
 > ```
 >
-> `--show` recognises both digests and tells you which one you are looking at.
+> The script prints a warning when the target is `is_active: false`. Superseded
+> versions stay *readable* long after they stop being *runnable*, so reading one
+> back successfully tells you nothing about whether a run against it will resolve.
+>
+> `--show` recognises the reference digests and tells you which run you are looking
+> at, including the empty one.
 
 Or with raw `curl` — note the four things that will bite you, all covered in
 [Platform behavior worth knowing](#platform-behavior-worth-knowing):
@@ -574,14 +585,15 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
 #    the mga blueprint pins newton-fusion and whisper itself
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
   "$ATAI_API_ENDPOINT/agents/bundles" -d '{
-    "blueprint": "blp_76kyqm4vjp9pt8tvfz8tks7x6t",
-    "values": {"max_frames": 64, "max_new_tokens": 2048}
+    "blueprint": "mga",
+    "values": {"max_frames": 64, "max_new_tokens": 16384}
   }'
 
 # 3. run — returns 202, not 201
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
   "$ATAI_API_ENDPOINT/agents/bundles/$BUNDLE_ID/run" -d '{
-    "connectors": {"source": [{"type": "file", "id": "tire_i2JWkDyg26A.mp4", "format": "mp4"}]}
+    "connectors": {"source": [{"type": "file",
+      "id": "tire_i2JWkDyg26A-20260813T154418Z-410f.mp4", "format": "mp4"}]}
   }'
 
 # 4. watch — /logs, NOT /events; and ignore the status field, it lies both ways
@@ -708,7 +720,7 @@ therefore deferred — it cannot measure anything while the cap binds.
 > **blueprint that no longer runs**. Both changed on 2026-08-11:
 >
 > - The canonical `mga` blueprint now exposes `max_new_tokens` and defaults it to
->   **2048** instead of the hardcoded 256 this section is about. The defect is
+>   **16384** instead of the hardcoded 256 this section is about. The defect is
 >   fixed upstream.
 > - The blueprint these steps target, `blp_76kyqm4vjp9pt8tvfz8tks7x6t`, is
 >   **unrunnable**. It wires `repetition_penalty`, `seed`, `stop`, `temperature`,
@@ -789,19 +801,24 @@ kept working across both fixes: `max_new_tokens` flipped from `NOT A VALUE` to
 requiring a code change. That is what makes it a regression test rather than a
 snapshot.
 
-### 3. The full ladder  ❌ rungs B and C are unreachable
+### 3. The full ladder  ⚠️ A is unreachable; B and C need no id
+
+Rung A reproduced a hardcoded 256-token cap that no longer exists, so it cannot be
+re-run at all. B and C no longer need the pinned id they were written with — both
+`max_new_tokens` and `prompt` are wired on the canonical blueprint, so drop
+`--blueprint` entirely. The historic outputs stay committed under `reference/`.
 
 ```sh
 # A — the shipped defect: 6 steps, 4/11 reference steps, output truncated
+#     NOT REPRODUCIBLE: the 256-token cap it depends on was removed upstream.
 python3 repro_truncation.py --max-new-tokens 1024
 
 # B — budget only:      10 steps, 10/11 reference steps (4/11 at IoU>=0.5)
-python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
-    --max-new-tokens 2048
+python3 repro_truncation.py --max-new-tokens 16384
 
 # C — budget + prompt:  19 steps, 10/11 reference steps (5/11 at IoU>=0.5)
-python3 repro_truncation.py --blueprint blp_76kyqm4vjp9pt8tvfz8tks7x6t \
-    --max-new-tokens 2048 \
+#     Today the same prompt at 16384 gives 18 steps and 7/11 at IoU>=0.5 (rung E).
+python3 repro_truncation.py --max-new-tokens 16384 \
     --prompt "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
 ```
 
