@@ -573,20 +573,32 @@ three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
 > `--show` recognises the reference digests and tells you which run you are looking
 > at, including the empty one.
 
-The same five calls in raw HTTP, for integrating without the Python. Each one has
-a way to get it wrong; all five are explained in
+The same five calls in raw HTTP, for integrating without the Python — sending what
+the script sends, including the `prompt`. Each call has a way to get it wrong; all
+of them are explained in
 [Platform behavior worth knowing](#platform-behavior-worth-knowing):
 
 ```sh
 # 1. upload            (declare video/mp4 — the DECLARED type is enforced)
+#    Upload under a UNIQUE name: file_id is the filename, and it is a mutable
+#    pointer shared across your org. Re-using a name orphans the previous
+#    object and kills whichever run is still holding it.
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
-  -F "file=@clip.mp4;type=video/mp4" "$ATAI_API_ENDPOINT/v0.5/files"
+  -F "file=@clip.mp4;filename=clip-20260813T154418Z-410f.mp4;type=video/mp4" \
+  "$ATAI_API_ENDPOINT/v0.5/files"
 
 # 2. bundle            (/bundles is PLURAL; no artifacts map for mga)
+#    SEND A PROMPT. Omit it and the blueprint's own instruction applies —
+#    "…with 10 steps or less" — which halves the manual. Say what to COVER,
+#    never how to format: the parser owns the output template.
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
   "$ATAI_API_ENDPOINT/agents/bundles" -d '{
     "blueprint": "mga",
-    "values": {"max_frames": 64, "max_new_tokens": 16384}
+    "values": {
+      "max_frames": 64,
+      "max_new_tokens": 16384,
+      "prompt": "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
+    }
   }'
 
 # 3. run               (returns 202, not 201)
