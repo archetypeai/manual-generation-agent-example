@@ -65,20 +65,19 @@ or check it offline with no API key via `python3 evaluate.py --compare reference
 ## The end-to-end example, stage by stage
 
 ```
-video + reference steps ─> 1 select ──> 2 configure ──> 3 run ──> 4 evaluate
-                          (suitability)  (blueprint,     (platform)  (offline)
-                                          values, prompt)
-                                              ▲
-                                   every quality decision, and
-                                   whichever control is currently
-                                   out of reach
+1 select ─> 2 fetch ─> 3 configure ─> 4 run ─> 5 evaluate
+(is the       (video +   (blueprint,    (the      (offline,
+ video        reference   values,        platform)  no key)
+ suitable?)   steps)      prompt)
+                              ▲
+                    every quality decision lives here
 ```
 
-Four stages of work, not seven. RED and OSM spend most of theirs producing a fitted
-classifier; MGA is zero-shot, so there is nothing to fit, no grid to search and no
-artifact to upload. What replaces them is **configuration** — and the recurring
-lesson of this example is that the configuration you need has twice been the
-configuration the blueprint does not expose:
+Five stages, and only one of them needs the platform. RED and OSM spend most of
+their work producing a fitted classifier; MGA is zero-shot, so there is nothing to
+fit, no grid to search and no artifact to upload. What replaces that work is
+**configuration** — and the recurring lesson here is that the configuration you
+need has twice been configuration the blueprint did not expose:
 
 | when | the control out of reach | consequence | now |
 |---|---|---|---|
@@ -92,23 +91,31 @@ wire is accepted with HTTP 201 and echoed straight back at you.
 So read Stage 3 as the general case rather than a bug report about one value: the
 platform accepts any `values` you send and silently ignores the ones the blueprint
 does not wire, so **the first thing worth doing on any run is checking which of your
-settings are real.** The script does that before it spends anything:
+settings are real.** The script does that before it spends anything, and on the
+current blueprint it reports everything honoured:
+
+```
+blueprint blp_6va7xxnrrn9fr8ybhgz3v3zvw7 (key=mga, active=True)
+  honoured: ['max_frames', 'max_new_tokens', 'prompt']
+```
+
+When that stops being true it names the value instead, which is the whole point of
+running the check on every run rather than trusting this README:
 
 ```
 WARNING: ['prompt'] is not wired on this blueprint and will be silently ignored.
 ```
 
-Every stage is a standalone script. All but the run itself need no API key.
+Each stage runs on its own, and **only stage 4 touches the platform** — everything
+else, including the whole evaluation, works offline with no API key.
 
-| Stage | Script | Needs |
+| Stage | How to run it | Needs |
 |---|---|---|
-| 1 Select a video | `evaluate.py --compare` (offline), manual inspection | nothing |
-| 2 Configure | `run_mga_example.py --dry-run` | nothing |
-| 3 Run | `run_mga_example.py` | dev API key |
-| 4 Evaluate | `evaluate.py` | nothing |
-
-The numbered stage headings below still read 1–5, with fetching the video as its own
-stage. That is the order the scripts run in.
+| 1 Select a video | `ffprobe` for duration and an audio track; see the checks below | nothing |
+| 2 Fetch | `run_mga_example.py --download-only` | nothing (yt-dlp + ffmpeg) |
+| 3 Configure | `run_mga_example.py --dry-run` | nothing |
+| 4 Run | `run_mga_example.py` | dev API key |
+| 5 Evaluate | `evaluate.py --compare reference/*.json` | nothing |
 
 ## Evidence: what the configuration is worth
 
