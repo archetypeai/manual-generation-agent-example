@@ -573,47 +573,48 @@ three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
 > `--show` recognises the reference digests and tells you which run you are looking
 > at, including the empty one.
 
-Or with raw `curl` — note the four things that will bite you, all covered in
+The same five calls in raw HTTP, for integrating without the Python. Each one has
+a way to get it wrong; all five are explained in
 [Platform behavior worth knowing](#platform-behavior-worth-knowing):
 
 ```sh
-# 1. upload — the DECLARED MIME type is enforced, so video/mp4 matters
+# 1. upload            (declare video/mp4 — the DECLARED type is enforced)
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
-  -F "file=@data/clips/tire_i2JWkDyg26A.mp4;type=video/mp4" "$ATAI_API_ENDPOINT/v0.5/files"
+  -F "file=@clip.mp4;type=video/mp4" "$ATAI_API_ENDPOINT/v0.5/files"
 
-# 2. bundle — PLURAL /bundles (singular 404s), and NO artifacts map:
-#    the mga blueprint pins newton-fusion and whisper itself
+# 2. bundle            (/bundles is PLURAL; no artifacts map for mga)
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
   "$ATAI_API_ENDPOINT/agents/bundles" -d '{
     "blueprint": "mga",
     "values": {"max_frames": 64, "max_new_tokens": 16384}
   }'
 
-# 3. run — returns 202, not 201
+# 3. run               (returns 202, not 201)
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
   "$ATAI_API_ENDPOINT/agents/bundles/$BUNDLE_ID/run" -d '{
-    "connectors": {"source": [{"type": "file",
-      "id": "tire_i2JWkDyg26A-20260813T154418Z-410f.mp4", "format": "mp4"}]}
+    "connectors": {"source": [{"type": "file", "id": "<the file_id you uploaded>",
+                               "format": "mp4"}]}
   }'
 
-# 4. watch — /logs, NOT /events; and ignore the status field, it lies both ways
+# 4. watch             (/logs, not /events; the status field lies both ways)
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
   "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/logs?limit=500"
 
-# 5. results — the ref is relative, resolves under /v0.5, needs the token
+# 5. results           (ref is relative, resolves under /v0.5, needs the token)
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
   "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/results"
 ```
 
 ### What a run produces
 
-One JSONL record per video:
+**One JSON document per run** — not JSONL. The platform reports
+`file_extension: "json"` and the body parses as a single object:
 
 ```json
 {"id":"tire_i2JWkDyg26A","results":[
-  {"step":0,"instruction":"Set up a warning triangle and turn on the hazard lights.",
-   "frame_start":400.0,"frame_end":625.0,
-   "timestamp_start":16.0,"timestamp_end":25.0}, …]}
+  {"step":0,"instruction":"Stop the car safely on a firm level surface away from traffic.",
+   "frame_start":275.0,"frame_end":525.0,
+   "timestamp_start":11.0,"timestamp_end":21.0}, …]}
 ```
 
 Four properties, none of them documented in the blueprint:
@@ -623,14 +624,14 @@ Four properties, none of them documented in the blueprint:
   anyway, so no frames→seconds conversion is needed. `manual-gen-jos` needs a
   second model pass to get `[MM:SS]` reliably — MGA gets it in one.
 - **Frame indices are SOURCE frames, not sampled frames.** Max observed index
-  2,125 against 4,329 source frames; sampled space would have capped at 63.
-  `frame = timestamp × fps` held exactly on every row of every run.
+  3,475 against 4,329 source frames; sampled space would have capped at 63.
+  `frame = timestamp × 25 fps` holds exactly on every row of every run.
 - **`step` is 0-based.** A 10-step manual reports `step` 0–9. CrossTask reference
   steps are 1-based (1–11), so a scorer that joins them naively is off by one —
   and it produces plausible-looking wrong alignments rather than an error.
 - **The output tiles the timeline contiguously.** Every step's `timestamp_end` is
-  exactly the next step's `timestamp_start`, on integer-second boundaries, in all
-  three runs. **MGA performs segmentation, not event detection.** There is no
+  exactly the next step's `timestamp_start`, on integer-second boundaries, in
+  every run recorded here. **MGA performs segmentation, not event detection.** There is no
   "nothing happening here" option, so every span must be labelled — which is why
   a spoken safety caution gets its own step (see
   [Reading the output as a manual](#3c-reading-the-output-as-a-manual)).
