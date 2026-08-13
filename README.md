@@ -82,7 +82,7 @@ need has twice been configuration the blueprint did not expose:
 | when | the control out of reach | consequence | now |
 |---|---|---|---|
 | 2026-08-07 | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 16384 |
-| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | **fixed** 2026-08-12 — PLDEV-1730 |
+| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps, 3.2 actions bundled into each | **fixed** 2026-08-12 — PLDEV-1730 |
 
 Both are fixed today. The lesson is not either individual defect but that it
 happened twice in five days, silently both times — a value the blueprint does not
@@ -125,44 +125,61 @@ the measurement behind the two numbers it tells you to send.
 The same 173 s video across five blueprint versions. **E is what you get today**;
 A–D are kept because they are the evidence for what the instruction is worth:
 
-| | A — capped | B — A + tokens | C — B + prompt | D — prompt hardcoded | **E — current** |
+|  | A — capped | B — A + tokens | C — B + prompt | D — prompt hardcoded | **E — current** |
 |---|---|---|---|---|---|
-| blueprint | `blp_0zmce3…` | `blp_76kyqm…` | `blp_76kyqm…` | `blp_5wtsdwmp…` | **`mga` → `blp_6va7xx…`** |
-| caller's prompt honoured | n/a | n/a | **yes** | no — hardcoded | **yes** |
+| blueprint | `blp_0zmce3…` | `blp_76kyqm…` | `blp_76kyqm…` | `blp_5wtsdwmp…` | **`blp_6va7xx…`** |
+| caller's prompt honoured | n/a | n/a | **yes** | no | **yes** |
 | `max_new_tokens` | 256 (fixed) | 2048 | 2048 | 4096 | **16384** |
-| Steps emitted | 6 | 10 | **19** | 10 | **18** |
-| Coverage | 16–85 s | 16–120 s | **11–139 s** | 11–135 s | **11–139 s** |
-| ref steps found, IoU≥0.5 | 3/11 | — | 5/11 | 4/11 | **7/11** |
-| Recall @ IoU ≥ 0.3 | 4/11 | 8/11 | 9/11 | **10/11** |
-| Recall @ IoU ≥ 0.5 | 3/11 | 4/11 | **5/11** | 4/11 |
-| Actions bundled per step | — | — | **1.6 avg, 4 max** | 3.2 avg, **7 max** |
-| Safety cautions as their own step | 1 | 1 | **4** | 1 |
-| md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` | — |
+| steps emitted | 6 | 10 | 19 | 10 | 18 |
+| coverage | 16–85 s | 16–120 s | 11–139 s | 11–135 s | 11–139 s |
+| ref steps found (any overlap) | 4/11 | 10/11 | 10/11 | 11/11 | 11/11 |
+| … at IoU ≥ 0.3 | 4/11 | 8/11 | 9/11 | 10/11 | 9/11 |
+| … at IoU ≥ 0.5 | 3/11 | 4/11 | 5/11 | 4/11 | 7/11 |
+| actions bundled per step | 2.2 avg, 5 max | 2.8 avg, 5 max | 1.6 avg, 4 max | 3.2 avg, 7 max | 1.7 avg, 4 max |
+| cautions as their own step | 0 | 0 | 3 | 0 | 1 |
+| md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` | `1b421e46…` | `48e8a9c9…` |
 
-**Read that table twice, because the metric and the manual disagree.** D has the
-best IoU recall of any run here — 10/11 — and is the worst manual. Recall rewards
-fewer, longer steps: each one overlaps more of a reference interval. What it cannot
-see is that D compresses the first 24 seconds into a single step containing seven
-actions, and drops two spoken safety cautions entirely:
+Every number above is computed from the committed outputs, so `python3 evaluate.py
+--compare reference/*.json` reproduces the whole table offline.
+
+**Read it twice, because the metric and the manual disagree.** D scores best on
+IoU ≥ 0.3 — 10/11, better than today's E — and is the worst manual of the five.
+Loose-threshold recall rewards fewer, longer steps: MGA tiles the timeline
+contiguously, so a 10-step manual has longer steps that overlap more of any
+reference interval. Tighten the threshold and the ranking inverts — at IoU ≥ 0.5
+D finds 4/11 and E finds 7/11.
+
+What recall cannot see at all is that D bundles **3.2 actions into the average
+step and 7 into its worst**, against 1.7 and 4 for E. An operator cannot tick off
+"apply the parking brake" separately from "switch off the ignition", and each step
+gets one frame thumbnail however many actions it contains. If you take one thing
+from this example, take that: **evaluate a manual by whether it can be followed,
+not only by temporal recall.**
+
+**The cautions are the honest caveat.** A caller-supplied prompt is what lets a
+spoken-only instruction become its own step at all — D, with the instruction
+hardcoded, emits none. But restoring `prompt` did not restore all of them: C found
+three, E finds one.
 
 ```
-in C, their own steps:   "Never put any object or body part under the vehicle when using the jack."
-                         "Do not touch the disc wheels or brakes as they can be hot."
-in D:                    absent
+C:  "Never put any object or body part under the vehicle when using the jack."
+    "Do not touch the disc wheels or brakes as they can be hot."
+    "Do not exceed 80 kilometers per hour when driving with a compact spare wheel."
+E:  "Do not exceed 80 kilometers per hour when driving with a compact spare wheel."
 ```
 
-An operator cannot tick off "apply the parking brake" separately from "switch off
-the ignition", and each step gets one frame thumbnail however many actions it
-contains. If you take one thing from this example, take that: **evaluate a manual
-by whether it can be followed, not only by temporal recall.**
+C and E differ in more than the prompt — different blueprint, different model
+build, 2048 against 16384 tokens — so this is not a controlled comparison and the
+two missing cautions are not attributable to any one of those. Worth a run to
+pin down if safety content matters to your use case.
 
-D shows what that costs. Its instruction was fixed at *"Generate a concise,
-ordered list of distinct steps with 10 steps or less."*, so it was capped at 10
-steps by wording rather than by content — full write-up in
+D is what a hardcoded instruction costs: fixed at *"Generate a concise, ordered
+list of distinct steps with 10 steps or less."*, it was capped at 10 steps by
+wording rather than by content — full write-up in
 [`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md).
 `prompt` became settable again on 2026-08-12 (**PLDEV-1730**), and E is the
-result: 18 steps, including the two spoken-only cautions D drops, and 7 of 11
-reference steps localised within IoU ≥ 0.5 against D's 4.
+result: 18 steps at 1.7 actions each, and 7 of 11 reference steps localised
+within IoU ≥ 0.5 against D's 4.
 
 ⚠️ **`max_new_tokens` is a floor, not a ceiling.** The model reasons before it
 answers out of the same budget, so below the threshold it never reaches an answer
@@ -176,8 +193,10 @@ The last three are byte-identical (generation is deterministic at temperature 0)
 so the threshold is between 4k and 16k and nothing above it helps. Lowering this
 does not shorten the manual — it empties it, silently.
 
-Run A is confirmed across **three runs on two machines**, byte-identical each time
-(generation is deterministic at `temperature: 0.0`).
+Run A is confirmed across **three runs on two machines**, and E across **three
+budgets** (16384/32768/65536) — byte-identical every time, because generation is
+deterministic at `temperature: 0.0`. A digest that differs means the input or the
+configuration differed, not that the model wandered.
 
 Careful with recall: it means *some non-advisory prediction overlaps the reference
 interval*. MGA tiles the timeline with no gaps, so every interval necessarily
