@@ -13,11 +13,14 @@ Single file, stdlib only — no pip install, no virtualenv. Copy this file plus 
     python3 run_mga_example.py --dry-run      # print the plan, call nothing
 
 Expect ~15 minutes: ~7.5 min of model download/load on every run (nothing is
-cached between runs), then ~2.5x realtime processing. Dev appears to run these
-one at a time, so a second concurrent run just queues — submitting four at once
-produced 800-second queue waits rather than any parallelism.
+cached between runs), then ~2.5x realtime processing.
 
-FOUR THINGS THAT WILL BITE YOU (all verified on dev, 2026-08-10)
+Run ONE AT A TIME. An earlier version of this note said dev serialises jobs, on
+the strength of four submissions that produced ~800 s queue waits. That was
+wrong: three concurrent runs on 2026-08-13 came up as three concurrent pods, and
+one was SIGKILLed (`pod.terminated  Error (exit=137)`) partway through loading.
+
+FIVE THINGS THAT WILL BITE YOU (verified on dev, 2026-08-10 and 2026-08-13)
 
   1. The bundle endpoint is PLURAL. `POST /agents/bundle` returns 404; it is
      `POST /agents/bundles`. The clients committed in the RED and OSM example
@@ -36,6 +39,14 @@ FOUR THINGS THAT WILL BITE YOU (all verified on dev, 2026-08-10)
      persist 20+ minutes after a pod terminated with exit=1, and `running` after
      a job had completed. Decide terminality from the log stream.
 
+  5. `file_id` IS the filename, and it is a MUTABLE, ORG-WIDE pointer. Uploading
+     the same name again repoints it and orphans the previous object, so a
+     colleague running this example with the default clip kills your in-flight
+     run — and the other way round. It surfaces ~7 min later as
+     `S3 object not found`, blaming storage rather than the overwrite, because
+     input resolution happens at submit time but the fetch happens after the
+     model load. upload_name() below suffixes every upload for this reason.
+
 Also worth knowing: unlike the `red`/`osm` blueprints, MGA needs NO `artifacts`
 map — the blueprint pins newton-fusion and whisper itself. And `max_frames`
 accepts any value at bundle creation (16, 512, 1024, -1 all return `ready`), so
@@ -44,6 +55,7 @@ the API will not stop you setting something the pipeline cannot honour.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import glob
@@ -78,24 +90,25 @@ VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not our
 # submitting a run all still succeed; the pod dies one second after it starts.
 BLUEPRINT_DEFAULT = "mga"
 
-# Kept for provenance, not for use.
+# WHAT CHANGED, and what it means for this example. Both of the controls this
+# example was written to work around are now exposed on the canonical blueprint —
+# so the defaults below are simply honoured, and no workaround is needed:
 #
-# blp_0zmce3... was the active canonical when this example was written. It
-# hardcoded max_new_tokens: 256, which truncated the manual at 6 steps covering
-# half the video — the finding this example exists to document.
-BLUEPRINT_HISTORIC_ACTIVE = "blp_0zmce3qnjp8659dp1pszdqbtx4"
-# blp_76kyqm... was superseded but runnable, and exposed max_new_tokens and prompt.
-# This file defaulted to it for exactly that reason. It is now UNRUNNABLE (above).
-BLUEPRINT_DEAD_WITH_PARAMS = "blp_76kyqm4vjp9pt8tvfz8tks7x6t"
-
-# WHAT CHANGED, and what it means for this example:
-#   max_new_tokens is now settable on the canonical blueprint and defaults to 2048
-#   rather than 256, so the truncation this example documents is FIXED upstream.
-#   `prompt` is NOT settable there — the source connector hardcodes
-#   "Generate a concise, ordered list of distinct steps with 10 steps or less."
-#   so --prompt is accepted, reported as inert by the preflight below, and ignored.
-#   Stage C of the ladder in the README cannot be reproduced until a canonical
-#   blueprint exposes ${values.prompt} again.
+#   max_new_tokens  settable since blp_5wtsdwmp… (was hardcoded at 256, which is
+#                   the truncation this example originally documented). The
+#                   blueprint's own default is now 16384 — and that default is
+#                   LOAD-BEARING, see the note on DEFAULT_MAX_NEW_TOKENS below.
+#   prompt          settable again as of blp_6va7xxnrrn9fr8ybhgz3v3zvw7
+#                   (canonical 2026-08-12), wired as ${values.prompt}. In between
+#                   it was hardcoded to "Generate a concise, ordered list of
+#                   distinct steps with 10 steps or less." — a ~10-step ceiling
+#                   imposed by wording rather than by content. Stage C of the
+#                   README ladder is reproducible again.
+#
+# Do not take that as permanent. This is the third prompt-related republication in
+# a week, and each time the failure was silent: an unwired value is accepted with
+# HTTP 201 and echoed straight back. The preflight below checks rather than assumes,
+# and you should keep it in any client you build.
 
 # The instruction the default configuration uses. Deliberately says what to cover
 # and NOT how to format it: ManualGenerationResultsParserNode owns the output
@@ -108,10 +121,26 @@ DEFAULT_PROMPT = (
     "to at most 15 words. Use both what is shown and what is said. Do not invent "
     "steps that are not shown or stated in the video."
 )
-# What the defaults below produce on dev. Generation is deterministic
-# (temperature 0.0), so a matching digest means you reproduced the run exactly.
-KNOWN_MD5 = "4067a03bc740135bdbee1f0b62cbc511"
-# The active blueprint's truncated output, for comparison.
+# The model REASONS BEFORE IT ANSWERS, and the reasoning is paid for out of this
+# budget. Set it too low and generation ends mid-reasoning having emitted no
+# answer at all: the job still reports `completed`, with no ERROR row and
+# `results: []`. Measured on the 173 s example clip, 2026-08-13:
+#
+#     2048  ->  0 steps      4096  ->  0 steps
+#    16384  -> 18 steps     32768  -> 18 steps     65536  -> 18 steps
+#
+# The last three are BYTE-IDENTICAL (generation is deterministic at temperature
+# 0), so the threshold is between 4k and 16k and nothing above 16k changes the
+# answer. Do not lower this to "save tokens" — below the threshold you do not get
+# a shorter manual, you get no manual.
+DEFAULT_MAX_NEW_TOKENS = 16384
+
+# What the defaults below produce on dev. A matching digest means you reproduced
+# the run exactly.
+KNOWN_MD5 = "48e8a9c91d60040043a713afcea510ec"   # 18 steps, 11-139s of 173s
+# Same clip and prompt at max_new_tokens 4096: an empty manual, 38 bytes.
+EMPTY_MD5 = "164bf7b46ad4be48b8bece50a39cb0c6"
+# The original 256-token-capped output, for historic comparison.
 TRUNCATED_MD5 = "080e551a88f0bdcd857e48557366ae60"
 
 TERMINAL_EVENTS = ("pod.terminated", "job.completed", "job.failed", "job.canceled")
@@ -214,7 +243,38 @@ def download_video(path: str) -> None:
         )
 
 
-def upload(path: str) -> str:
+def upload_name(path: str) -> str:
+    """A collision-proof name to upload under.
+
+    `file_id` IS the filename, and it is a mutable pointer: uploading the same
+    name again repoints it to a fresh object and orphans the previous one. That
+    is not a local concern — the name lives in one org-wide namespace, so a
+    colleague running this example destroys YOUR in-flight run, and vice versa.
+
+    It fails late and looks like a platform fault. Input resolution succeeds at
+    submit time, but the pod does not fetch the bytes until ~7.5 min of model
+    loading later, so the run dies minutes in with
+
+      ERROR source.running  skipping video "clip.mp4": downloading video
+        "s3://…/files_service/archetypeai/c03580dd-…" from S3 failed:
+        S3 object not found
+
+    with nothing implicating the upload that overwrote it. Suffix every upload.
+
+    Original stem + UTC timestamp + 4 random hex, e.g.
+
+      tire_i2JWkDyg26A-20260813T153042Z-9f3a.mp4
+
+    The stem keeps it recognisable in a shared namespace and the timestamp sorts;
+    the random tail is the part that actually guarantees uniqueness, since two
+    people starting within the same second is precisely the case being fixed.
+    """
+    stem, ext = os.path.splitext(os.path.basename(path))
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stem}-{stamp}-{uuid.uuid4().hex[:4]}{ext or '.mp4'}"
+
+
+def upload(path: str, name: str | None = None) -> str:
     """POST the video to /v0.5/files as multipart/form-data.
 
     The declared Content-Type matters: the files API enforces a MIME allowlist on
@@ -224,7 +284,7 @@ def upload(path: str) -> str:
     """
     key, endpoint = env()
     boundary = uuid.uuid4().hex
-    name = os.path.basename(path)
+    name = name or os.path.basename(path)
     body = b"".join([
         f"--{boundary}\r\n".encode(),
         f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'.encode(),
@@ -268,7 +328,26 @@ def watch(agent_id: str, timeout_s: int = 60 * 60) -> str:
     return "timeout"
 
 
-def fetch_results(agent_id: str, out_path: str) -> str | None:
+def normalise_id(payload: bytes, canonical: str) -> bytes:
+    """Rewrite each record's `id` back to the video's own stem.
+
+    The output `id` is derived from the name the video was uploaded under, so the
+    uniqueness suffix from upload_name() would otherwise leak into the results and
+    make every run's digest differ — defeating the determinism check below and
+    making two people's outputs look unequal when only the filenames differed.
+    """
+    out = []
+    for line in payload.decode().splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        rec["id"] = canonical
+        out.append(json.dumps(rec))
+    return ("\n".join(out) + "\n").encode()
+
+
+def fetch_results(agent_id: str, out_path: str,
+                  canonical_id: str | None = None) -> str | None:
     _, endpoint = env()
     results = api("GET", f"{endpoint}/agents/instances/{agent_id}/results")
     items = results.get("data") or []
@@ -285,6 +364,8 @@ def fetch_results(agent_id: str, out_path: str) -> str | None:
     # header. Run outputs do not expire, so this can be re-fetched later.
     payload = api("GET", f"{endpoint}/v0.5{ref}", raw=True) if not ref.startswith("http") \
         else urllib.request.urlopen(ref, timeout=300).read()
+    if canonical_id:
+        payload = normalise_id(payload, canonical_id)
     open(out_path, "wb").write(payload)
     print(f"  saved {out_path} ({len(payload)} bytes, "
           f"md5 {hashlib.md5(payload).hexdigest()})")
@@ -305,10 +386,14 @@ def show(path: str) -> None:
     print(f"\nmd5 {digest}")
     if digest == KNOWN_MD5:
         print("  matches the reference run exactly (generation is deterministic)")
+    elif digest == EMPTY_MD5:
+        print("  this is the EMPTY result: generation ended inside the model's\n"
+              "  reasoning block without producing an answer. Raise --max-new-tokens\n"
+              f"  to {DEFAULT_MAX_NEW_TOKENS}.")
     elif digest == TRUNCATED_MD5:
-        print("  this is the TRUNCATED output of the active blueprint (6 steps,\n"
-              "  16-85s of 173s). Its hardcoded max_new_tokens: 256 cannot be\n"
-              "  raised from a bundle — see the README's 'token cap' section.")
+        print("  this is the historic TRUNCATED output from the 256-token cap\n"
+              "  (6 steps, 16-85s of 173s). That cap is long gone; you are probably\n"
+              "  looking at an archived file rather than a fresh run.")
     else:
         print(f"  differs from the reference run ({KNOWN_MD5}) — different video,"
               f" max_frames, prompt, or a changed blueprint")
@@ -330,17 +415,17 @@ def main() -> None:
                          f"tracks whatever is canonical and active. A pinned id can "
                          f"stop resolving when the blueprint is republished — which is "
                          f"exactly what happened to the id this used to default to.")
-    ap.add_argument("--max-new-tokens", type=int, default=4096,
-                    help="output budget (default 4096). The canonical blueprint's own "
-                         "default is 2048, which is enough for this 2:53 clip but not "
-                         "for a longer one; 4096 matches what the companion app sends "
-                         "so the two do not disagree. Raise it if the last step comes "
-                         "back cut mid-sentence.")
+    ap.add_argument("--max-new-tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS,
+                    help=f"output budget (default {DEFAULT_MAX_NEW_TOKENS}, matching the "
+                         f"blueprint). The model reasons before answering out of this "
+                         f"same budget, so anything below ~16k returns an EMPTY manual "
+                         f"rather than a short one — 4096 gives 0 steps on the example "
+                         f"clip. Raising it above 16384 changes nothing.")
     ap.add_argument("--prompt", default=DEFAULT_PROMPT,
-                    help="the instruction. NOTE: the canonical blueprint currently "
-                         "HARDCODES its prompt, so this is reported inert by the "
-                         "preflight and then ignored. Do not specify an output format "
-                         "in it either — the results parser owns the template, and a "
+                    help="the instruction, honoured as ${values.prompt} on the "
+                         "canonical blueprint (verified by the preflight, which warns "
+                         "if that stops being true). Say what to COVER, never how to "
+                         "format: the results parser owns the output template, and a "
                          "format-overriding prompt makes it return zero steps.")
     ap.add_argument("--name", default="MGA CrossTask tire change")
     ap.add_argument("--output", default="data/mga-output.jsonl")
@@ -365,7 +450,7 @@ def main() -> None:
                           "values": values}, indent=2))
         print(f"POST {endpoint}/agents/bundles/<id>/run")
         print(json.dumps({"connectors": {"source": [
-            {"type": "file", "id": os.path.basename(args.video), "format": "mp4"}]}}, indent=2))
+            {"type": "file", "id": upload_name(args.video), "format": "mp4"}]}}, indent=2))
         return
 
     # The video is a single fixed 5.7 MB asset whose URL is baked in, so fetch it
@@ -393,12 +478,22 @@ def main() -> None:
           f"active={bp['is_active']})")
     if not bp["is_active"]:
         print("  NOTE: this blueprint is superseded — results cannot ship.")
+    honoured = [k for k in values if k not in inert]
+    print(f"  honoured: {honoured}")
     if inert:
         print(f"  WARNING: {inert} is not wired on this blueprint and will be "
               f"silently ignored.")
+        if "prompt" in inert:
+            print(f"    prompt has been unwired before. When it is, the blueprint's "
+                  f"own instruction applies:\n"
+                  f"    {doc['connectors']['source']['config'].get('default_text')!r}\n"
+                  f"    which caps the manual at ~10 steps however long the video is.")
 
     print(f"uploading {args.video} ...")
-    file_id = upload(args.video)
+    # Unique per upload: file_id is an org-wide mutable pointer, so a plain
+    # basename lets a colleague's run overwrite this one's input mid-flight.
+    name = upload_name(args.video)
+    file_id = upload(args.video, name)
 
     # No `artifacts` map: the mga blueprint pins newton-fusion:1.0 and
     # whisper:large-v3 itself — the main shape difference from red/osm, which
@@ -421,8 +516,21 @@ def main() -> None:
 
     verdict = watch(agent_id)
     print(f"\nrun {verdict}")
-    saved = fetch_results(agent_id, args.output)
+    saved = fetch_results(agent_id, args.output,
+                          canonical_id=os.path.splitext(os.path.basename(args.video))[0])
     if saved:
+        # A run can complete with results: [] and no ERROR row anywhere — seen when
+        # the model produced text the parser could not fit to its template, and when
+        # max_new_tokens truncated the list before it ended. Neither the status field
+        # nor the logs distinguish that from success, so check the count here.
+        steps = sum(len(json.loads(l).get("results", []))
+                    for l in open(saved) if l.strip())
+        if steps == 0:
+            print("\n  WARNING: the run completed but produced ZERO steps. Most "
+                  "likely\n  the prompt specified an output format the results "
+                  "parser rejects,\n  or --max-new-tokens cut the list off. The "
+                  "platform now logs a\n  warning for the former — check "
+                  f"{endpoint}/agents/instances/{agent_id}/logs")
         show(saved)
     if verdict == "failed":
         sys.exit(f"run failed — full log: "

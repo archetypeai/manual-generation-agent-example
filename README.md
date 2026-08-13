@@ -46,18 +46,18 @@ surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
 checks for both tools before it starts. (Already have the clip? Point `--video` at
 it and neither tool is needed.)
 
-What comes back. **D is what you get today**; A–C are the same video on blueprint
-versions that no longer run, kept because they are the evidence for what the
-instruction is worth:
+What comes back. **E is what you get today**; A–D are the same video on earlier
+blueprint versions, kept because they are the evidence for what the instruction
+is worth:
 
-| | A — capped | B — A + tokens | C — B + prompt | **D — current blueprint** |
-|---|---|---|---|---|
-| blueprint | `blp_0zmce3…` | `blp_76kyqm…` | `blp_76kyqm…` | **`mga` → `blp_5wtsdwmp…`** |
-| caller's prompt honoured | n/a | n/a | **yes** | **no — hardcoded** |
-| `max_new_tokens` | 256 (fixed) | 2048 | 2048 | 4096 |
-| Steps emitted | 6 | 10 | **19** | 10 |
-| Coverage | 16–85 s | 16–120 s | **11–139 s** | 11–135 s |
-| Words | 83 | 152 | 219 | 176 |
+| | A — capped | B — A + tokens | C — B + prompt | D — prompt hardcoded | **E — current** |
+|---|---|---|---|---|---|
+| blueprint | `blp_0zmce3…` | `blp_76kyqm…` | `blp_76kyqm…` | `blp_5wtsdwmp…` | **`mga` → `blp_6va7xx…`** |
+| caller's prompt honoured | n/a | n/a | **yes** | no — hardcoded | **yes** |
+| `max_new_tokens` | 256 (fixed) | 2048 | 2048 | 4096 | **16384** |
+| Steps emitted | 6 | 10 | **19** | 10 | **18** |
+| Coverage | 16–85 s | 16–120 s | **11–139 s** | 11–135 s | **11–139 s** |
+| ref steps found, IoU≥0.5 | 3/11 | — | 5/11 | 4/11 | **7/11** |
 | Recall @ IoU ≥ 0.3 | 4/11 | 8/11 | 9/11 | **10/11** |
 | Recall @ IoU ≥ 0.5 | 3/11 | 4/11 | **5/11** | 4/11 |
 | Actions bundled per step | — | — | **1.6 avg, 4 max** | 3.2 avg, **7 max** |
@@ -81,17 +81,25 @@ the ignition", and each step gets one frame thumbnail however many actions it
 contains. If you take one thing from this example, take that: **evaluate a manual
 by whether it can be followed, not only by temporal recall.**
 
-The cause is a single line in the current blueprint — the instruction is fixed at
-*"Generate a concise, ordered list of distinct steps with 10 steps or less."* and
-`prompt` is not settable, so D is capped at 10 steps by wording rather than by
-content. Full write-up with both configurations and both outputs in
-[`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md);
-tracked as **PLDEV-1730**.
+D shows what that costs. Its instruction was fixed at *"Generate a concise,
+ordered list of distinct steps with 10 steps or less."*, so it was capped at 10
+steps by wording rather than by content — full write-up in
+[`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md).
+`prompt` became settable again on 2026-08-12 (**PLDEV-1730**), and E is the
+result: 18 steps, including the two spoken-only cautions D drops, and 7 of 11
+reference steps localised within IoU ≥ 0.5 against D's 4.
 
-⚠️ **`max_new_tokens: 2048`, the blueprint's own default, returns an EMPTY manual on
-this video** — `job.completed`, no error row, `results: []`, 39 bytes
-([`reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.jsonl`](reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.jsonl)).
-That is why the script sends 4096. Anyone relying on defaults gets nothing, silently.
+⚠️ **`max_new_tokens` is a floor, not a ceiling.** The model reasons before it
+answers out of the same budget, so below the threshold it never reaches an answer
+and you get `job.completed`, no error row, `results: []`. On this video:
+
+| 2048 | 4096 | **16384** | 32768 | 65536 |
+|---|---|---|---|---|
+| 0 steps | 0 steps | **18 steps** | 18 steps | 18 steps |
+
+The last three are byte-identical (generation is deterministic at temperature 0),
+so the threshold is between 4k and 16k and nothing above it helps. Lowering this
+does not shorten the manual — it empties it, silently.
 
 Run A is confirmed across **three runs on two machines**, byte-identical each time
 (generation is deterministic at `temperature: 0.0`).
@@ -131,8 +139,12 @@ configuration the blueprint does not expose:
 
 | when | the control out of reach | consequence | now |
 |---|---|---|---|
-| as written | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 2048 |
-| today | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | open — **PLDEV-1730** |
+| 2026-08-07 | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 16384 |
+| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | **fixed** 2026-08-12 — PLDEV-1730 |
+
+Both are fixed today. The lesson is not either individual defect but that it
+happened twice in five days, silently both times — a value the blueprint does not
+wire is accepted with HTTP 201 and echoed straight back at you.
 
 So read Stage 3 as the general case rather than a bug report about one value: the
 platform accepts any `values` you send and silently ignores the ones the blueprint
@@ -266,14 +278,16 @@ python3 run_mga_example.py --dry-run     # print the exact payload, call nothing
 | Value | This example sends | Honoured today? | Notes |
 |---|---|---|---|
 | `max_frames` | **64** | ✅ | Blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see 3d. |
-| `max_new_tokens` | **4096** | ✅ | Was the defect: the shipped blueprint hardcoded **256** and truncated the manual. **Fixed upstream** — now settable, default 2048. But 2048 returns an EMPTY manual on this video, so 4096. |
+| `max_new_tokens` | **16384** | ✅ | Was the first defect (hardcoded **256**, manual truncated). Now settable and the blueprint's own default. It is a **floor**: the model reasons out of this budget, so 2048 and 4096 both return an EMPTY manual on this video while 16384/32768/65536 return the same 18 steps. |
 | `size` | not sent (224) | ✅ | Every frame is resized to `size × size` before the model sees it. `null` keeps the source resolution. Untested here; the obvious lever if on-screen text is unreadable. |
-| `prompt` | a coverage instruction | ❌ **ignored** | Now the defect. The blueprint hardcodes its instruction and does not expose `${values.prompt}`, so this is accepted, reported inert by the preflight, and discarded. **PLDEV-1730.** |
+| `prompt` | a coverage instruction | ✅ | Was the second defect: hardcoded to "10 steps or less" between 2026-08-11 and 08-12, so a caller's instruction was accepted and discarded. Wired again as `${values.prompt}` (**PLDEV-1730**). Say what to COVER, never how to format — the results parser owns the template. |
 
-**The defect moved.** When this example was written the problem was the token cap
-and the prompt was the fix. The cap is now fixed and the prompt is the problem. The
-sections below document the cap for the record — the reasoning transfers directly,
-because both are the same failure: **a generation control the caller cannot reach.**
+**Both defects are fixed; the pattern is the point.** Twice in five days the
+setting that decided whether the manual was usable was one the blueprint did not
+expose, and both times the failure was silent — HTTP 201, the value echoed back,
+no effect. The sections below document each for the record, and the preflight in
+the script is the durable lesson: **check which of your values are actually wired
+before spending a run.**
 
 ### 3a. The token cap was the whole story  ⏮ HISTORIC — fixed upstream
 
@@ -656,8 +670,10 @@ therefore deferred — it cannot measure anything while the cap binds.
 >   accepting those properties. Reading it, creating a bundle and submitting a run
 >   all still succeed; the pod dies one second after it starts with
 >   `resolving blueprint: invalid config for 1 node(s)`.
-> - `prompt` is **not settable** on the canonical blueprint — the source connector
->   hardcodes its instruction — so the ladder's rung C cannot be built at all.
+> - `prompt` was **not settable** on the canonical blueprint while this section was
+>   written, so the ladder's rung C could not be built. It is settable again as of
+>   2026-08-12 (PLDEV-1730), and rung C's equivalent is rung E in the table at the
+>   top of this README.
 >
 > **The offline path below still works** and is worth keeping: it analyses the
 > committed reference outputs and needs no API key, no GPU and no network. The
@@ -722,8 +738,10 @@ spend 15 minutes:
 ```
 
 That check reads the blueprint document rather than hardcoding known keys, so it
-keeps working after a fix: once `max_new_tokens` is restored it reports `honoured`
-with no code change, which makes it a regression test too.
+kept working across both fixes: `max_new_tokens` flipped from `NOT A VALUE` to
+`honoured` when it was exposed, and `prompt` did the same on 2026-08-12, neither
+requiring a code change. That is what makes it a regression test rather than a
+snapshot.
 
 ### 3. The full ladder  ❌ rungs B and C are unreachable
 
@@ -943,16 +961,18 @@ checklist is done:
 |---|---|---|
 | 1 | Point the example at the active blueprint | ✅ both scripts default to the key `mga` |
 | 2 | Track new blueprint versions | ✅ solved by using the key rather than an id |
-| 3 | Re-run and update the expected digest | ⚠️ `KNOWN_MD5` describes a run that can no longer be reproduced — see below |
-| 4 | Revisit the `--max-new-tokens` default | ✅ 4096, because the blueprint's own 2048 returns an empty manual |
-| 5 | Decide what to do about `--prompt` | ⏳ still sent, still ignored, preflight warns — **PLDEV-1730** |
-| 6–7 | Re-frame the headline and Stage 3 | ✅ the defect moved from the token cap to the prompt |
-| 8 | Delete this section | ⏳ when PLDEV-1730 lands |
+| 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 18-step run on the current blueprint, re-validated 2026-08-13 |
+| 4 | Revisit the `--max-new-tokens` default | ✅ 16384 — measured; 4096 returns an empty manual, above 16384 changes nothing |
+| 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12 — **PLDEV-1730** landed |
+| 6–7 | Re-frame the headline and Stage 3 | ✅ both defects fixed; the framing is now the recurring pattern |
+| 8 | Delete this section | ⏳ once the ladder above has been re-run on a second video |
 
-**`KNOWN_MD5` is stale by design.** It is the digest of the 19-step run, which needed
-a caller-supplied prompt. Nothing on the current blueprint can reproduce it, so the
-script will report a mismatch. Left in place deliberately: it is the artifact
-PLDEV-1730 should restore, and a green digest is how you will know it did.
+**`KNOWN_MD5` is live again.** It was stale for a while — the digest of the 19-step
+run, which needed a caller-supplied prompt that the blueprint had stopped
+accepting. With `prompt` restored it has been re-measured on the current
+blueprint: `48e8a9c91d60040043a713afcea510ec`, 18 steps, and a matching digest
+means you reproduced the run exactly. `EMPTY_MD5` is next to it so a run that came
+back empty is named rather than left as a mystery.
 
 **What should *not* change:** `repro_truncation.py` keeps its committed baselines.
 Its wired-value preflight reads the blueprint document rather than hardcoding key
