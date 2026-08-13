@@ -135,13 +135,16 @@ DEFAULT_PROMPT = (
 # a shorter manual, you get no manual.
 DEFAULT_MAX_NEW_TOKENS = 16384
 
-# What the defaults below produce on dev. A matching digest means you reproduced
-# the run exactly.
-KNOWN_MD5 = "48e8a9c91d60040043a713afcea510ec"   # 18 steps, 11-139s of 173s
+# What the defaults below produce on dev. These are CONTENT digests — md5 over the
+# parsed manual with keys sorted, not over the file bytes — so reformatting the
+# output cannot break the check. Hashing bytes did break it once: changing the
+# separators in normalise_id() told everyone who had reproduced the run exactly
+# that they had not.
+KNOWN_MD5 = "caaea09f1c19645d444fb6ce33f1b139"   # 18 steps, 11-139s of 173s
 # Same clip and prompt at max_new_tokens 4096: an empty manual, 38 bytes.
-EMPTY_MD5 = "164bf7b46ad4be48b8bece50a39cb0c6"
+EMPTY_MD5 = "1e724b1286bd1771ec6b3856b47d4daa"
 # The original 256-token-capped output, for historic comparison.
-TRUNCATED_MD5 = "080e551a88f0bdcd857e48557366ae60"
+TRUNCATED_MD5 = "275677ab10f75f4eb26e3c07d4154f85"
 
 TERMINAL_EVENTS = ("pod.terminated", "job.completed", "job.failed", "job.canceled")
 
@@ -328,6 +331,22 @@ def watch(agent_id: str, timeout_s: int = 60 * 60) -> str:
     return "timeout"
 
 
+def content_digest(path: str) -> str:
+    """md5 of the manual's CONTENT, independent of how it was serialised.
+
+    Hashing raw file bytes was a mistake: it made the reproducibility check
+    hostage to our own formatting. Changing the separators in normalise_id() once
+    was enough to report a mismatch to everyone who had in fact reproduced the run
+    exactly — the worst possible failure for a check whose whole job is to tell you
+    whether the model gave you the same answer.
+
+    Keys are sorted and separators fixed here, so only the manual itself counts.
+    """
+    return hashlib.md5(
+        json.dumps(load_records(path), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def load_records(path: str) -> list[dict]:
     """Read an MGA output file.
 
@@ -392,13 +411,13 @@ def fetch_results(agent_id: str, out_path: str,
 
 
 def show(path: str) -> None:
-    digest = hashlib.md5(open(path, "rb").read()).hexdigest()
+    digest = content_digest(path)
     for rec in load_records(path):
         print(f"\nmanual for {rec.get('id')} — {len(rec.get('results', []))} steps")
         for r in rec.get("results", []):
             print(f"  [{r['timestamp_start']:>6.1f} - {r['timestamp_end']:>6.1f}s] "
                   f"(frames {r['frame_start']:.0f}-{r['frame_end']:.0f})  {r['instruction']}")
-    print(f"\nmd5 {digest}")
+    print(f"\ncontent md5 {digest}")
     if digest == KNOWN_MD5:
         print("  matches the reference run exactly (generation is deterministic)")
     elif digest == EMPTY_MD5:

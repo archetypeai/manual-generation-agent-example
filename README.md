@@ -47,8 +47,8 @@ checks for both tools before it starts. (Already have the clip? Point `--video` 
 it and neither tool is needed.)
 
 **What you get:** an 18-step manual covering 11–139 s of the 173 s clip, each step
-carrying a start and end timestamp you can trace back to the video, plus a digest
-that should match `48e8a9c9…` exactly — generation is deterministic at
+carrying a start and end timestamp you can trace back to the video, plus a content digest
+that should match `caaea09f…` exactly — generation is deterministic at
 temperature 0, so a matching digest means you reproduced the reference run.
 
 Two settings decide whether that works, and both have silent failure modes:
@@ -137,7 +137,7 @@ A–D are kept because they are the evidence for what the instruction is worth:
 | … at IoU ≥ 0.5 | 3/11 | 4/11 | 5/11 | 4/11 | 7/11 |
 | actions bundled per step | 2.2 avg, 5 max | 2.8 avg, 5 max | 1.6 avg, 4 max | 3.2 avg, 7 max | 1.7 avg, 4 max |
 | cautions as their own step | 0 | 0 | 3 | 0 | 1 |
-| md5 | `080e551a…` | `3b8152e7…` | `4067a03b…` | `1b421e46…` | `48e8a9c9…` |
+| content md5 | `275677ab…` | `577c21eb…` | `66d86cf4…` | `06b7b258…` | `caaea09f…` |
 
 Every number above is computed from the committed outputs, so `python3 evaluate.py
 --compare reference/*.json` reproduces the whole table offline.
@@ -1033,7 +1033,7 @@ checklist is done:
 **`KNOWN_MD5` is live again.** It was stale for a while — the digest of the 19-step
 run, which needed a caller-supplied prompt that the blueprint had stopped
 accepting. With `prompt` restored it has been re-measured on the current
-blueprint: `48e8a9c91d60040043a713afcea510ec`, 18 steps, and a matching digest
+blueprint: `caaea09f1c19645d444fb6ce33f1b139`, 18 steps, and a matching digest
 means you reproduced the run exactly. `EMPTY_MD5` is next to it so a run that came
 back empty is named rather than left as a mystery.
 
