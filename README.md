@@ -725,116 +725,6 @@ mid-clause. It also shows verbosity trading directly against coverage: `mf=32`
 produced richer descriptions and 4 s *less* coverage. A `max_frames` sweep is
 therefore deferred — it cannot measure anything while the cap binds.
 
-## Reproducing — LEGACY
-
-> **⚠️ LEGACY. Kept for the record, not currently reproducible.**
->
-> This section reproduces a **token-cap defect that no longer exists**, using a
-> **blueprint that no longer runs**. Both changed on 2026-08-11:
->
-> - The canonical `mga` blueprint now exposes `max_new_tokens` and defaults it to
->   **16384** instead of the hardcoded 256 this section is about. The defect is
->   fixed upstream.
-> - The blueprint these steps target, `blp_76kyqm4vjp9pt8tvfz8tks7x6t`, is
->   **unrunnable**. It wires `repetition_penalty`, `seed`, `stop`, `temperature`,
->   `top_k` and `top_p` into its own `fusion` node, and the platform stopped
->   accepting those properties. Reading it, creating a bundle and submitting a run
->   all still succeed; the pod dies one second after it starts with
->   `resolving blueprint: invalid config for 1 node(s)`.
-> - `prompt` was **not settable** on the canonical blueprint while this section was
->   written, so the ladder's rung C could not be built. It is settable again as of
->   2026-08-12 (PLDEV-1730), and rung C's equivalent is rung E in the table at the
->   top of this README.
->
-> **The offline path below still works** and is worth keeping: it analyses the
-> committed reference outputs and needs no API key, no GPU and no network. The
-> live paths (2 and 3) will fail at blueprint resolution.
->
-> Not deleted because the committed outputs, digests and reference intervals are
-> the evidence for the finding, and the finding was real. Delete it once a
-> canonical blueprint exposes `${values.prompt}` and this can be rewritten against
-> something that runs.
-
-[`repro_truncation.py`](repro_truncation.py) isolates the defect and reports each
-symptom as `CONFIRMED` / `NOT REPRODUCED`. Single file, stdlib only, with the 11
-reference intervals embedded so **no CrossTask download is needed**.
-
-### 1. Offline — instant, no API key, no GPU  ✅ still works
-
-```sh
-python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.json
-```
-
-```
-  SYMPTOM 1 — coverage stops before the procedure ends
-    last prediction ends     : 85.0s
-    last reference step ends : 132.2s
-    procedure left uncovered : 47.2s (36% of the annotated procedure)
-    => CONFIRMED
-  SYMPTOM 2 — reference steps 5-11 get no prediction
-    missed: [5, 6, 7, 8, 9, 10, 11]  (7/11 reference steps)
-    => CONFIRMED (exactly steps 5-11, as filed)
-  SYMPTOM 3 — final step is cut mid-clause (the token-cap signature)
-    step 5: ends 'r'  <-- no terminal punctuation
-    => CONFIRMED
-
-3/3 symptoms confirmed.
-```
-
-Coverage is judged against the **annotated procedure's end (132.2 s)**, not the
-video duration — the tail is outro with no steps in it, so measuring to 173.2 s
-would penalize output that is actually complete.
-
-### 2. Live against dev — ~15 minutes  ❌ fails at blueprint resolution
-
-```sh
-printf 'ATAI_API_KEY=<key>\nATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app\n' > .env
-python3 repro_truncation.py
-```
-
-Every run opens with a configuration block that states what is being sent **and
-whether the blueprint will honour it**, so an inert value is caught before you
-spend 15 minutes:
-
-```
-  blueprint       blp_0zmce3qnjp8659dp1pszdqbtx4
-                  key=mga  canonical=True  ACTIVE — this is what ships
-  max_frames      64                          -> honoured
-  max_new_tokens  1024                        -> NOT A VALUE on this blueprint — accepted by the API, ignored
-
-  instruction in force (HARDCODED in the blueprint — not settable from a bundle):
-    "Generate a concise, ordered list of distinct steps with 10 steps or less."
-
-  WARNING: ['max_new_tokens'] will have NO effect on this blueprint.
-```
-
-That check reads the blueprint document rather than hardcoding known keys, so it
-kept working across both fixes: `max_new_tokens` flipped from `NOT A VALUE` to
-`honoured` when it was exposed, and `prompt` did the same on 2026-08-12, neither
-requiring a code change. That is what makes it a regression test rather than a
-snapshot.
-
-### 3. The full ladder  ⚠️ A is unreachable; B and C need no id
-
-Rung A reproduced a hardcoded 256-token cap that no longer exists, so it cannot be
-re-run at all. B and C no longer need the pinned id they were written with — both
-`max_new_tokens` and `prompt` are wired on the canonical blueprint, so drop
-`--blueprint` entirely. The historic outputs stay committed under `reference/`.
-
-```sh
-# A — the shipped defect: 6 steps, 4/11 reference steps, output truncated
-#     NOT REPRODUCIBLE: the 256-token cap it depends on was removed upstream.
-python3 repro_truncation.py --max-new-tokens 1024
-
-# B — budget only:      10 steps, 10/11 reference steps (4/11 at IoU>=0.5)
-python3 repro_truncation.py --max-new-tokens 16384
-
-# C — budget + prompt:  19 steps, 10/11 reference steps (5/11 at IoU>=0.5)
-#     Today the same prompt at 16384 gives 18 steps and 7/11 at IoU>=0.5 (rung E).
-python3 repro_truncation.py --max-new-tokens 16384 \
-    --prompt "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
-```
-
 ## Platform behavior worth knowing
 
 - **Reference a blueprint by KEY, not by id.** `POST /agents/bundles` and
@@ -958,7 +848,7 @@ list reads as a record rather than a wish.
 | Path | What it is |
 |---|---|
 | `run_mga_example.py` | **Start here.** Single-file, stdlib-only end-to-end run: upload → bundle → run → watch `/logs` → download → print. Warns about values the blueprint will ignore. |
-| `repro_truncation.py` | Minimal reproduction of the truncation, reporting each symptom as CONFIRMED / NOT REPRODUCED. `--analyse` works offline; `--blueprint` / `--max-new-tokens` / `--prompt` walk the A→B→C ladder. |
+| `repro_truncation.py` | Historic: a minimal reproduction of the 256-token truncation, reporting each symptom as CONFIRMED / NOT REPRODUCED. The cap it targets is fixed upstream, so it no longer reproduces anything; kept because `--analyse` still reads a committed output offline and its wired-value preflight is a working regression check. |
 | `blueprints/mga-tuned.yaml` | The blueprint that restores `max_new_tokens` and the instruction as bundle values. Needs an admin to register. |
 | `reference/` | The three committed run outputs (A, B, C) plus a snapshot of the active blueprint document. |
 | `evaluate.py` | Scores an output against CrossTask: reference-step recall, IoU at several thresholds, advisories and unmatched predictions counted separately. Offline. `--compare` prints the A/B/C ladder. |
@@ -1053,7 +943,8 @@ back empty is named rather than left as a mystery.
 **What should *not* change:** `repro_truncation.py` keeps its committed baselines.
 Its wired-value preflight reads the blueprint document rather than hardcoding key
 names, so it flipped from reporting `max_new_tokens` as `NOT WIRED` to `honoured`
-with no code change — and it will do the same for `prompt`.
+with no code change, and did the same for `prompt` on 2026-08-12. That property is
+why it survives the removal of the walkthrough that used it.
 
 ## Cleanup
 
