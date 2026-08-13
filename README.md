@@ -891,19 +891,12 @@ does but this example does not.
 
 ## Platform behavior worth knowing
 
-- **Reference a blueprint by KEY, not by id.** `POST /agents/bundles` and
-  `GET /agents/blueprints/{…}` both accept either, and a key resolves to whatever is
-  canonical and active. Three `mga` versions were published in about two hours on
-  2026-08-11, and a pinned id **stopped resolving mid-session**: the superseded
-  blueprint wires generation parameters into its own `fusion` node that the node
-  schema no longer accepts, so it now fails with `resolving blueprint: invalid
-  config for 1 node(s)`. Reading it, creating a bundle and submitting a run all
-  still succeed; the pod dies one second after it starts. Pin an id only to
-  reproduce a specific past run.
-- **A run can complete successfully and return nothing.** `max_new_tokens: 2048` —
-  the current blueprint's own default — produced `{"id":"…","results":[]}` on this
-  173 s video: `job.completed`, no ERROR row, 39 bytes, after 543 s of generation.
-  Count the steps; neither the status nor the logs will tell you.
+- **Reference a blueprint by KEY, not by id.** Both endpoints accept either, and a
+  key resolves to whatever is canonical and active. A pinned id fails *after* the
+  `202`, at pod start — see [lesson 6](#6-target-the-blueprint-key-a-pinned-id-fails-late-and-quietly).
+- **A run can complete successfully and return nothing** — `job.completed`, no
+  ERROR row, `results: []`. Count the steps in every output; see
+  [lesson 5](#5-nothing-about-an-empty-run-looks-broken).
 - **The bundle endpoint is plural.** `POST /agents/bundle` → **404**; use
   `POST /agents/bundles`. The clients committed in the RED and OSM example repos
   use the singular form and **fail against current dev**.
@@ -922,8 +915,11 @@ does but this example does not.
 - **Cold start is ~7.5 min per run and is never cached.** whisper ~35–40 s download
   + ~4 s load; **newton-fusion ~5 min download + 1 min 40 s load**. Consistent
   across every run. Total wall clock 877–886 s for a 173 s video.
-- **Dev serializes these jobs.** Four concurrent submissions produced queue waits
-  of **799–817 s**, not parallelism. Budget a sweep as the sum of its runs.
+- **Dev does NOT serialize these jobs**, despite appearances. Four concurrent
+  submissions once produced queue waits of **799–817 s**, which looked like a
+  queue; three concurrent runs on 2026-08-13 instead came up as three concurrent
+  pods and one was SIGKILLed mid-load (`pod.terminated  Error (exit=137)`). Run one
+  at a time, and budget a sweep as the sum of its runs.
 - **Videos over ~5 minutes fail**, and the same error appears on much shorter
   inputs. A 563 s video at default settings ran 5 min 13 s then died:
   `pipeline execution failed: Newton generation event stream closed without a
@@ -949,52 +945,61 @@ Observations for the author, not defects.
   blueprint runs `whisper:large-v3` into `prompt.audio`, and run C's spoken safety
   cautions prove the transcript reaches the model. Audio is used — via ASR, not
   fusion-native.
-- **There is no runtime instruction on the active blueprint.** The doc describes an
-  algorithm that "takes an input instruction and video" and mentions passing the
-  SOP at runtime. Active `mga` sets `text_extensions: []` with a fixed
-  `default_text`, commented *"Manual generation has no SOP: this fixed instruction
-  is used for every video."* By contrast `tva`'s source config is `{}` and its
-  instruction arrives from a `prepare` node — **TVA accepts a reference procedure
-  at runtime and MGA deliberately does not.**
+- **The runtime instruction arrived, by a different route than the doc implies.**
+  The doc describes an algorithm that "takes an input instruction and video" and
+  mentions passing the SOP at runtime. `mga` still sets `text_extensions: []`, so
+  the *input* path stays closed and a text file cannot be supplied — but
+  `default_text` is now `${values.prompt}`, so the instruction is a **bundle
+  value** instead. By contrast `tva` takes its instruction from a `prepare` node.
+  Three shapes for one idea across two blueprints is worth a convention.
 - **Context is not the binding constraint.** The doc motivates its preprocessing
   work by videos overflowing the context window. In practice the constraints are
-  the output budget and the ~5-minute ceiling, at 0.15–0.6% context utilization.
+  the ~5-minute ceiling and the *output* budget — and not because the manual is
+  long: the budget is consumed by a reasoning phase the doc does not describe,
+  which is why 4096 tokens yields no manual at all while 16384 yields 18 steps, at
+  0.15–0.6% context utilization throughout.
 - **The model is fp8** — `f1_0_35b_a3b_fp8_base_040625b4d0750b`, confirming the
   35B/3B-active MoE description and adding quantization the doc does not mention.
 
 ## Recommendations
 
-Numbers 1 and 3 have since been implemented; they are kept with their outcome so the
-list reads as a record rather than a wish.
+Numbers 1, 2 and 3 have since been implemented; they are kept with their outcome so
+the list reads as a record rather than a wish — including where the outcome was not
+quite what was asked for.
 
 1. ~~**Expose `max_new_tokens` on the active `mga` blueprint.**~~ ✅ **Done.** It is
    settable on the canonical blueprint. This was the single largest quality gain
    measured here: 4/11 → 8/11 reference steps, prompt untouched.
-2. **Expose `prompt`.** Still open — **PLDEV-1730**, and now the binding constraint.
-   The current blueprint hardcodes *"…10 steps or less"*, which caps the manual at
-   10 steps by wording rather than by content, bundles up to seven actions into one
-   step, and **drops two spoken safety cautions**. It was exposed once, found
-   fragile because a format-specifying prompt makes the parser return zero steps,
-   and reverted — a sound call at the time. Appending the format requirement after
-   the caller's instruction, or failing loudly on a non-conforming response, makes
-   it safe. Note the fix does not require relaxing `text_extensions: []`: keep that,
-   and change `default_text` to `${values.prompt}` with the current sentence as the
-   default. Full evidence in
+2. ~~**Expose `prompt`.**~~ ✅ **Done** (PLDEV-1730, 2026-08-12) — and implemented
+   exactly as suggested: `text_extensions: []` kept closed, `default_text` changed
+   to `${values.prompt}` with the old sentence as the default. Measured gain on
+   this clip: action-bundling falls from **3.2 actions per step to 1.7**, and
+   IoU ≥ 0.5 rises from 4/11 to 7/11. **Still open underneath it:** the parser can
+   still return zero steps for a format-specifying prompt, silently — appending the
+   format requirement after the caller's instruction, or failing loudly on a
+   non-conforming response, would close that. Evidence in
    [`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md).
-3. ~~**Raise the default `max_new_tokens` above 256.**~~ ✅ **Done** — now 2048.
-   **But 2048 returns an empty manual on this video**: `job.completed`, no error,
-   `results: []`. A default that silently produces nothing is worse than one that
-   truncates visibly, because nothing in the status, the logs or the exit code
-   distinguishes it from success.
-4. **Reconsider the default instruction.** "10 steps or less" became the binding
-   constraint the moment the budget was raised — exactly as predicted here — and
-   nothing asks the model to cover the whole recording.
+3. ~~**Raise the default `max_new_tokens` above 256.**~~ ✅ **Done** — 256 → 2048 →
+   **16384**, and the middle step is the interesting one: 2048 returned an *empty*
+   manual on this video, because the budget is consumed by a reasoning phase before
+   any answer is emitted. A default that silently produces nothing is worse than
+   one that truncates visibly. 16384 is comfortably above the floor; **please treat
+   it as a minimum rather than a tunable**, and consider rejecting sub-floor values
+   at bundle creation instead of after 15 minutes of GPU.
+4. **Reconsider the default instruction.** Now that `prompt` is settable this only
+   affects callers who send none — but they are the ones least likely to know why
+   their manual is half the length it could be. "10 steps or less" caps by wording
+   rather than by content, and nothing asks the model to cover the whole recording.
 5. **Consider a `kind` field distinguishing actions from cautions**, or a notes
    section. Contiguous tiling forces spoken warnings to become numbered steps, and
-   when the step budget is tight they are the first thing dropped.
+   when the step budget is tight they are the first thing dropped — one run
+   surfaced three spoken cautions, another on the same clip surfaced one, with no
+   way to ask for them explicitly.
 6. **Emit progress events during processing.** Frame count decoded, transcript
-   length, per-node timing would have made the 563 s failure, this truncation and
-   the empty-result case diagnosable in one run instead of eight.
+   length, per-node timing would have made the 563 s failure, the truncation and
+   the empty-result case diagnosable in one run instead of eight. The new
+   `generation ended inside the model's reasoning block` warning is exactly the
+   right kind of signal — more of that.
 7. **Document the ~5-minute ceiling**, and consider whether 90-second overlapping
    chunks belong inside the blueprint rather than in each caller. The companion app
    implements them and hits `event stream closed without a terminal event` on
@@ -1006,6 +1011,13 @@ list reads as a record rather than a wish.
    stopped working mid-session when the node schema changed under it. Callers who
    followed the obvious advice — pin a version for reproducibility — were the ones
    who broke.
+10. **Make `file_id` collisions impossible, or visible.** `file_id` is the filename
+    and it is a mutable pointer in a namespace shared across the org, so an
+    unrelated upload of the same name orphans an in-flight run's input. It fails
+    ~7 minutes later as `S3 object not found`, which implicates storage rather than
+    the overwrite. Returning a distinct handle, or refusing to repoint a name an
+    active run depends on, would remove a failure mode that is undiagnosable from
+    the caller's side.
 
 ## Repo layout
 
