@@ -110,7 +110,7 @@ def main() -> None:
             if verdict == "FAILED":
                 print(f"  {label}: failed, skipping /results", flush=True)
                 continue
-            out = os.path.join(args.outdir, f"mga-{label}.jsonl")
+            out = os.path.join(args.outdir, f"mga-{label}.json")
             saved = download_results(jobs[label], out)
             if saved:
                 body = open(saved, "rb").read()

@@ -41,7 +41,7 @@ embedded, so no CrossTask download is needed to check the symptoms.
 
     ATAI_API_KEY / ATAI_API_ENDPOINT in .env next to this file
 
-    python3 repro_truncation.py --analyse out.jsonl      # offline, no API calls
+    python3 repro_truncation.py --analyse out.json       # offline, no API calls
     python3 repro_truncation.py --download-only          # just fetch the video
     python3 repro_truncation.py                          # fetch if needed, run, analyse
     python3 repro_truncation.py --max-new-tokens 1024    # show the value does nothing
@@ -399,7 +399,7 @@ def main() -> None:
         "     blp_76kyqm4vjp9pt8tvfz8tks7x6t no longer resolves at all.\n"
         "     Offline analysis of the committed baselines still works and is free:\n"
         f"       python3 {os.path.basename(__file__)} --analyse "
-        "reference/mga-output-i2JWkDyg26A-mf64.jsonl\n"
+        "reference/mga-output-i2JWkDyg26A-mf64.json\n"
         "     Continuing in 5s — Ctrl-C to stop.\n"
     )
     try:
@@ -442,7 +442,7 @@ def main() -> None:
                      f"{args.video}:\n    {VIDEO_URL}\n"
                      f"  Meanwhile the analysis needs no video at all:\n"
                      f"    python3 {os.path.basename(__file__)} --analyse "
-                     f"reference/mga-output-i2JWkDyg26A-mf64.jsonl")
+                     f"reference/mga-output-i2JWkDyg26A-mf64.json")
         if not os.path.exists(args.video):
             sys.exit(f"yt-dlp reported success but {args.video} is missing")
     else:
@@ -464,7 +464,7 @@ def main() -> None:
     file_id = upload(args.video)
     print(f"  file_id={file_id}")
 
-    out = run_once(file_id, values, "run", "data/repro.jsonl", bp["id"])
+    out = run_once(file_id, values, "run", "data/repro.json", bp["id"])
     if not out:
         sys.exit("the run did not complete — see the log output above")
     n = analyse(out)
@@ -486,7 +486,7 @@ def main() -> None:
         elif digest == REFERENCE_MD5:
             print(f"  this run   md5 {digest}")
             print(f"  baseline   md5 {REFERENCE_MD5}   "
-                  f"(reference/mga-output-i2JWkDyg26A-mf64.jsonl, no max_new_tokens)")
+                  f"(reference/mga-output-i2JWkDyg26A-mf64.json, no max_new_tokens)")
             print("  => IDENTICAL. max_new_tokens was accepted by the API (HTTP 201,\n"
                   "     echoed back in the bundle values) and had NO effect. The mga\n"
                   "     blueprint's fusion node config is only {model: ...} and never\n"

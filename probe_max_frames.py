@@ -139,7 +139,7 @@ def main() -> None:
         print(f"\n--- max_frames={mf}  {agent_id} ---")
         status = poll_agent(agent_id, TIMEOUT_S)
         print(f"  finished: {status}")
-        out = os.path.join(args.outdir, f"mga-mf{mf}.jsonl")
+        out = os.path.join(args.outdir, f"mga-mf{mf}.json")
         saved = download_results(agent_id, out)
         if saved:
             body = open(saved, "rb").read()

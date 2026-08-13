@@ -46,9 +46,77 @@ surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
 checks for both tools before it starts. (Already have the clip? Point `--video` at
 it and neither tool is needed.)
 
-What comes back. **E is what you get today**; A–D are the same video on earlier
-blueprint versions, kept because they are the evidence for what the instruction
-is worth:
+**What you get:** an 18-step manual covering 11–139 s of the 173 s clip, each step
+carrying a start and end timestamp you can trace back to the video, plus a digest
+that should match `48e8a9c9…` exactly — generation is deterministic at
+temperature 0, so a matching digest means you reproduced the reference run.
+
+Two settings decide whether that works, and both have silent failure modes:
+
+| | send | if you get it wrong |
+|---|---|---|
+| `max_new_tokens` | **16384** (the blueprint default) | below ~16k the run returns an EMPTY manual, reported as success |
+| `prompt` | say what to COVER, never how to format | a format-specifying prompt makes the parser return zero steps |
+
+Why those numbers, what the instruction is worth, and how the same clip scored on
+five blueprint versions: [**Evidence: what the configuration is worth**](#evidence-what-the-configuration-is-worth),
+or check it offline with no API key via `python3 evaluate.py --compare reference/*.json`.
+
+## The end-to-end example, stage by stage
+
+```
+video + reference steps ─> 1 select ──> 2 configure ──> 3 run ──> 4 evaluate
+                          (suitability)  (blueprint,     (platform)  (offline)
+                                          values, prompt)
+                                              ▲
+                                   every quality decision, and
+                                   whichever control is currently
+                                   out of reach
+```
+
+Four stages of work, not seven. RED and OSM spend most of theirs producing a fitted
+classifier; MGA is zero-shot, so there is nothing to fit, no grid to search and no
+artifact to upload. What replaces them is **configuration** — and the recurring
+lesson of this example is that the configuration you need has twice been the
+configuration the blueprint does not expose:
+
+| when | the control out of reach | consequence | now |
+|---|---|---|---|
+| 2026-08-07 | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 16384 |
+| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | **fixed** 2026-08-12 — PLDEV-1730 |
+
+Both are fixed today. The lesson is not either individual defect but that it
+happened twice in five days, silently both times — a value the blueprint does not
+wire is accepted with HTTP 201 and echoed straight back at you.
+
+So read Stage 3 as the general case rather than a bug report about one value: the
+platform accepts any `values` you send and silently ignores the ones the blueprint
+does not wire, so **the first thing worth doing on any run is checking which of your
+settings are real.** The script does that before it spends anything:
+
+```
+WARNING: ['prompt'] is not wired on this blueprint and will be silently ignored.
+```
+
+Every stage is a standalone script. All but the run itself need no API key.
+
+| Stage | Script | Needs |
+|---|---|---|
+| 1 Select a video | `evaluate.py --compare` (offline), manual inspection | nothing |
+| 2 Configure | `run_mga_example.py --dry-run` | nothing |
+| 3 Run | `run_mga_example.py` | dev API key |
+| 4 Evaluate | `evaluate.py` | nothing |
+
+The numbered stage headings below still read 1–5, with fetching the video as its own
+stage. That is the order the scripts run in.
+
+## Evidence: what the configuration is worth
+
+Skip this if you just want a manual — the quick start above is enough. This is
+the measurement behind the two numbers it tells you to send.
+
+The same 173 s video across five blueprint versions. **E is what you get today**;
+A–D are kept because they are the evidence for what the instruction is worth:
 
 | | A — capped | B — A + tokens | C — B + prompt | D — prompt hardcoded | **E — current** |
 |---|---|---|---|---|---|
@@ -116,56 +184,8 @@ All outputs are committed under [`reference/`](reference), so the comparison is
 checkable offline with no API key:
 
 ```sh
-python3 evaluate.py --compare reference/*.jsonl
+python3 evaluate.py --compare reference/*.json
 ```
-
-## The end-to-end example, stage by stage
-
-```
-video + reference steps ─> 1 select ──> 2 configure ──> 3 run ──> 4 evaluate
-                          (suitability)  (blueprint,     (platform)  (offline)
-                                          values, prompt)
-                                              ▲
-                                   every quality decision, and
-                                   whichever control is currently
-                                   out of reach
-```
-
-Four stages of work, not seven. RED and OSM spend most of theirs producing a fitted
-classifier; MGA is zero-shot, so there is nothing to fit, no grid to search and no
-artifact to upload. What replaces them is **configuration** — and the recurring
-lesson of this example is that the configuration you need has twice been the
-configuration the blueprint does not expose:
-
-| when | the control out of reach | consequence | now |
-|---|---|---|---|
-| 2026-08-07 | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 16384 |
-| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps; two safety cautions dropped | **fixed** 2026-08-12 — PLDEV-1730 |
-
-Both are fixed today. The lesson is not either individual defect but that it
-happened twice in five days, silently both times — a value the blueprint does not
-wire is accepted with HTTP 201 and echoed straight back at you.
-
-So read Stage 3 as the general case rather than a bug report about one value: the
-platform accepts any `values` you send and silently ignores the ones the blueprint
-does not wire, so **the first thing worth doing on any run is checking which of your
-settings are real.** The script does that before it spends anything:
-
-```
-WARNING: ['prompt'] is not wired on this blueprint and will be silently ignored.
-```
-
-Every stage is a standalone script. All but the run itself need no API key.
-
-| Stage | Script | Needs |
-|---|---|---|
-| 1 Select a video | `evaluate.py --compare` (offline), manual inspection | nothing |
-| 2 Configure | `run_mga_example.py --dry-run` | nothing |
-| 3 Run | `run_mga_example.py` | dev API key |
-| 4 Evaluate | `evaluate.py` | nothing |
-
-The numbered stage headings below still read 1–5, with fetching the video as its own
-stage. That is the order the scripts run in.
 
 ## Prerequisites
 
@@ -580,8 +600,8 @@ Four properties, none of them documented in the blueprint:
 ## Stage 5 — Evaluate
 
 ```sh
-python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.jsonl
-python3 evaluate.py --compare reference/*.jsonl        # the A/B/C ladder
+python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.json
+python3 evaluate.py --compare reference/*.json         # the whole ladder
 ```
 
 [`evaluate.py`](evaluate.py) is **offline and stdlib-only** — no API key, no network
@@ -691,7 +711,7 @@ reference intervals embedded so **no CrossTask download is needed**.
 ### 1. Offline — instant, no API key, no GPU  ✅ still works
 
 ```sh
-python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.jsonl
+python3 repro_truncation.py --analyse reference/mga-output-i2JWkDyg26A-mf64.json
 ```
 
 ```

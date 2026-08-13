@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Score MGA output against CrossTask reference annotations. Offline, stdlib only.
 
-    python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64.jsonl
-    python3 evaluate.py --compare reference/*.jsonl        # the A/B/C ladder
-    python3 evaluate.py out.jsonl --video i2JWkDyg26A --task 40567
+    python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64.json
+    python3 evaluate.py --compare reference/*             # the whole ladder
+    python3 evaluate.py out.json --video i2JWkDyg26A --task 40567
+
+MGA writes ONE JSON DOCUMENT per run. Both .json and the older .jsonl files in
+reference/ are read.
 
 No API key, no network, no GPU: it reads output files you already have. Reference
 intervals for the example video are embedded, so it works on a fresh clone; point
@@ -119,8 +122,23 @@ def is_advisory(text: str) -> bool:
     return any(t.startswith(p) for p in ADVISORY)
 
 
+def load_record(path: str) -> dict:
+    """First record of an MGA output file.
+
+    MGA emits ONE JSON DOCUMENT per run (the platform reports
+    `file_extension: "json"`). Files committed here before that was noticed carry
+    a `.jsonl` extension, so line-delimited bodies are still accepted.
+    """
+    raw = open(path, encoding="utf-8").read().strip()
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:
+        doc = [json.loads(l) for l in raw.splitlines() if l.strip()]
+    return doc[0] if isinstance(doc, list) else doc
+
+
 def score(path: str, ann: dict, steps: list[str], duration: float) -> dict:
-    rec = json.loads(open(path).read().strip().splitlines()[0])
+    rec = load_record(path)
     preds = rec["results"]
     spans = [(p["timestamp_start"], p["timestamp_end"]) for p in preds]
 
@@ -149,13 +167,17 @@ def score(path: str, ann: dict, steps: list[str], duration: float) -> dict:
     covered = sum(1 for v, _ in matched.values() if v > 0)
     contiguous = all(abs(spans[i][1] - spans[i + 1][0]) < 1e-6
                      for i in range(len(spans) - 1))
-    truncated = preds[-1]["instruction"].rstrip()[-1] not in ".!?"
+    # An EMPTY manual is a real outcome, not a malformed file: below the model's
+    # reasoning floor a run completes with `results: []` and no error anywhere.
+    # Scoring it as 0/n is the honest answer; crashing here hid it.
+    truncated = bool(preds) and preds[-1]["instruction"].rstrip()[-1] not in ".!?"
 
     return {
         "path": path, "preds": preds, "spans": spans, "matched": matched,
         "advisory": advisory, "unmatched": unmatched, "ann": ann, "steps": steps,
         "ref_end": ref_end, "covered": covered, "n_ref": len(ann),
-        "reach": max(b for _, b in spans), "start": min(a for a, _ in spans),
+        "reach": max((b for _, b in spans), default=0.0),
+        "start": min((a for a, _ in spans), default=0.0),
         "contiguous": contiguous, "truncated": truncated, "duration": duration,
         "words": sum(len(p["instruction"].split()) for p in preds),
     }
@@ -213,7 +235,7 @@ def report(r: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("outputs", nargs="*", help="MGA output JSONL file(s)")
-    ap.add_argument("--compare", nargs="+", metavar="JSONL",
+    ap.add_argument("--compare", nargs="+", metavar="FILE",
                     help="score several outputs and print a one-line-each summary")
     ap.add_argument("--task", default="40567")
     ap.add_argument("--video", default="i2JWkDyg26A")
@@ -238,7 +260,24 @@ def main() -> None:
     if args.annotator is not None:
         print(f"scoring against annotator {args.annotator} only")
 
-    results = [score(f, ann, steps, duration) for f in sorted(files)]
+    # `reference/*.json` also matches committed blueprint documents and other
+    # non-outputs, so skip anything without a `results` key rather than dying on
+    # the first one. Named explicitly, so a typo is not silently ignored.
+    scorable = []
+    for f in sorted(files):
+        try:
+            rec = load_record(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"skipping {os.path.basename(f)}: unreadable ({e})")
+            continue
+        if "results" not in rec:
+            print(f"skipping {os.path.basename(f)}: not an MGA output")
+            continue
+        scorable.append(f)
+    if not scorable:
+        sys.exit("no MGA output files to score")
+
+    results = [score(f, ann, steps, duration) for f in scorable]
 
     if args.compare:
         print(f"\n{'output':56} {'steps':>5} {'coverage':>14} {'recall':>7} "

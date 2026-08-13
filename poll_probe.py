@@ -129,7 +129,7 @@ def main() -> None:
     for mf, meta in sorted(final.items()):
         if meta["status"] != "completed":
             print(f"\n  max_frames={mf}: {meta['status']} — checking for results anyway")
-        out = os.path.join(args.outdir, f"mga-mf{mf}.jsonl")
+        out = os.path.join(args.outdir, f"mga-mf{mf}.json")
         saved = download_results(meta["agent_id"], out)
         if saved:
             summarize(saved, mf)

@@ -328,6 +328,25 @@ def watch(agent_id: str, timeout_s: int = 60 * 60) -> str:
     return "timeout"
 
 
+def load_records(path: str) -> list[dict]:
+    """Read an MGA output file.
+
+    MGA emits ONE JSON DOCUMENT per run — the platform reports
+    `file_extension: "json"` and the body parses as a single object. Older files
+    in this repo carry a `.jsonl` extension from when this example assumed
+    line-delimited output, so both shapes are accepted: parse as JSON first, fall
+    back to one-object-per-line.
+    """
+    raw = open(path, encoding="utf-8").read().strip()
+    if not raw:
+        return []
+    try:
+        doc = json.loads(raw)
+        return doc if isinstance(doc, list) else [doc]
+    except json.JSONDecodeError:
+        return [json.loads(l) for l in raw.splitlines() if l.strip()]
+
+
 def normalise_id(payload: bytes, canonical: str) -> bytes:
     """Rewrite each record's `id` back to the video's own stem.
 
@@ -336,14 +355,14 @@ def normalise_id(payload: bytes, canonical: str) -> bytes:
     make every run's digest differ — defeating the determinism check below and
     making two people's outputs look unequal when only the filenames differed.
     """
-    out = []
-    for line in payload.decode().splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
+    raw = payload.decode().strip()
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:                     # tolerate a line-delimited body
+        doc = [json.loads(l) for l in raw.splitlines() if l.strip()]
+    for rec in (doc if isinstance(doc, list) else [doc]):
         rec["id"] = canonical
-        out.append(json.dumps(rec))
-    return ("\n".join(out) + "\n").encode()
+    return (json.dumps(doc, separators=(",", ":")) + "\n").encode()
 
 
 def fetch_results(agent_id: str, out_path: str,
@@ -373,12 +392,8 @@ def fetch_results(agent_id: str, out_path: str,
 
 
 def show(path: str) -> None:
-    raw = open(path, "rb").read()
-    digest = hashlib.md5(raw).hexdigest()
-    for line in raw.decode(errors="replace").splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
+    digest = hashlib.md5(open(path, "rb").read()).hexdigest()
+    for rec in load_records(path):
         print(f"\nmanual for {rec.get('id')} — {len(rec.get('results', []))} steps")
         for r in rec.get("results", []):
             print(f"  [{r['timestamp_start']:>6.1f} - {r['timestamp_end']:>6.1f}s] "
@@ -428,7 +443,7 @@ def main() -> None:
                          "format: the results parser owns the output template, and a "
                          "format-overriding prompt makes it return zero steps.")
     ap.add_argument("--name", default="MGA CrossTask tire change")
-    ap.add_argument("--output", default="data/mga-output.jsonl")
+    ap.add_argument("--output", default="data/mga-output.json")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -523,8 +538,7 @@ def main() -> None:
         # the model produced text the parser could not fit to its template, and when
         # max_new_tokens truncated the list before it ended. Neither the status field
         # nor the logs distinguish that from success, so check the count here.
-        steps = sum(len(json.loads(l).get("results", []))
-                    for l in open(saved) if l.strip())
+        steps = sum(len(r.get("results", [])) for r in load_records(saved))
         if steps == 0:
             print("\n  WARNING: the run completed but produced ZERO steps. Most "
                   "likely\n  the prompt specified an output format the results "

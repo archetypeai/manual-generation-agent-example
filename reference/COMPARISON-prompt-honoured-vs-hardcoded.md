@@ -18,7 +18,7 @@ whether the blueprint honours the caller's instruction.
 Run B had **twice the token budget and produced half the steps**, so the ceiling is
 the instruction, not the budget. At the blueprint's own default of 2048 the same
 configuration returns **zero steps** with `job.completed` and no error
-(`reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.jsonl`, 39 bytes).
+(`reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.json`, 39 bytes).
 
 The instruction both runs sent:
 
