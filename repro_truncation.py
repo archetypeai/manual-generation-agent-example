@@ -23,11 +23,12 @@ evidence for the finding, and because the offline path still works.
       symptoms are absent, and against the old one the job fails outright.
 
   WHAT REPLACED IT
-    The same class of defect, one parameter over: `prompt` is now the control the
-    caller cannot reach. The blueprint hardcodes "…10 steps or less", which caps
-    the manual at 10 steps by wording rather than content and drops two spoken
-    safety cautions. Tracked as PLDEV-1730. See
-    reference/COMPARISON-prompt-honoured-vs-hardcoded.md.
+    That was followed by the same class of defect one parameter over: `prompt`
+    was hardcoded to "…10 steps or less", capping the manual at 10 steps by
+    wording rather than content and bundling 3.2 actions into the average step
+    against 1.7 with a caller prompt. BOTH ARE FIXED — `prompt` is settable again
+    as of 2026-08-12 (PLDEV-1730), so this script no longer reproduces either
+    defect. See reference/COMPARISON-prompt-honoured-vs-hardcoded.md.
 
   DO NOT "FIX" THIS SCRIPT BY UPDATING THE SYMPTOMS
     It is a record of a specific defect against specific committed outputs. Its
@@ -72,7 +73,8 @@ baseline output is committed to this repo, so a single run with the value set,
 producing the committed baseline digest, proves the value changed nothing.
 
 Costs ~15 min per run: ~7.5 min of model download/load on every run (nothing is
-cached), then ~2.5x realtime processing. Dev runs these one at a time.
+cached), then ~2.5x realtime processing. Run these one at a time — dev does
+not reliably serialize them.
 """
 from __future__ import annotations
 

@@ -234,7 +234,7 @@ def report(r: dict) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("outputs", nargs="*", help="MGA output JSONL file(s)")
+    ap.add_argument("outputs", nargs="*", help="MGA output file(s), .json")
     ap.add_argument("--compare", nargs="+", metavar="FILE",
                     help="score several outputs and print a one-line-each summary")
     ap.add_argument("--task", default="40567")

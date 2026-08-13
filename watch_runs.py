@@ -11,9 +11,11 @@ Three things learned the hard way, all encoded here:
     "running" for 20+ minutes after a pod terminated with exit=1. So terminality
     is judged from the log stream (`pod.terminated`, `job.completed`, an ERROR
     row), not from `status`.
-  * dev serializes these jobs. Submitting four at once produced 800+ second
-    queue waits, not parallelism, so `job.admitted.wait_seconds` is worth
-    printing to keep queueing distinct from execution.
+  * dev does NOT reliably serialize these jobs, though it can look like it.
+    Submitting four at once produced 800+ second queue waits; three at once came
+    up as three concurrent pods and one was SIGKILLed mid-load. Print
+    `job.admitted.wait_seconds` to keep queueing distinct from execution, and do
+    not rely on the platform to hold your runs apart.
 
 Usage:
   python3 -u watch_runs.py label=agt_... [label=agt_...] [--download]
