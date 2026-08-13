@@ -651,8 +651,8 @@ Four properties, none of them documented in the blueprint:
 ## Stage 5 — Evaluate
 
 ```sh
-python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64-mnt2048-coverage-prompt.json
-python3 evaluate.py --compare reference/*.json         # the whole ladder
+python3 evaluate.py data/mga-output.json                        # what you just produced
+python3 evaluate.py --compare data/mga-output.json reference/*.json   # against the ladder
 ```
 
 [`evaluate.py`](evaluate.py) is **offline and stdlib-only** — no API key, no network
@@ -664,44 +664,65 @@ per-task, wikiHow-derived reference procedure rather than an inventory of the vi
 so real actions it omits would be scored as false positives. Unmatched predictions
 are counted and displayed, never scored. See [3c](#3c-reading-the-output-as-a-manual).
 
-### Accuracy of run A, where it does predict
+### Accuracy of the current run, step by step
 
-| # | Reference step | Interval | MGA prediction | Predicted | IoU |
+| # | Reference step | Interval | Best-matching prediction | Predicted | IoU |
 |---|---|---|---|---|---|
-| 1 | brake on | 14.8–28.9 | Set up a warning triangle and turn on the hazard lights. | 16.0–25.0 | 0.64 |
-| 2 | get things out | 35.7–41.8 | Retrieve the spare wheel and tools from the trunk. | 35.0–46.0 | 0.56 |
-| 3 | start loose | 46.5–63.9 | Use the wrench to loosen the wheel nuts one half to one turn… | 50.0–66.0 | **0.71** |
-| 4 | jack up | 73.8–88.9 | Place the jack under the vehicle's jacking point and raise the car | 66.0–85.0 | 0.49 |
-| 5–11 | unscrew wheel → put things back | 89.0–132.2 | — no prediction — | — | 0.00 |
+| 1 | brake on | 14.8–28.9 | Stop the car safely on a firm level surface awa… | 11.0–21.0 | 0.35 |
+| 2 | get things out | 35.7–41.8 | Retrieve the spare wheel and tools from the trunk. | 35.0–46.0 | **0.56** |
+| 3 | start loose | 46.5–63.9 | Use the wrench to loosen the wheel nuts one hal… | 50.0–60.0 | **0.57** |
+| 4 | jack up | 73.8–88.9 | Place the jack and raise the vehicle until the… | 76.0–85.0 | **0.60** |
+| 5 | unscrew wheel | 89.0–91.7 | Remove the wheel nuts and take off the flat tire. | 85.0–95.0 | 0.27 |
+| 6 | withdraw wheel | 91.8–94.4 | Remove the wheel nuts and take off the flat tire. | 85.0–95.0 | 0.26 |
+| 7 | put wheel | 95.8–99.7 | Lift the spare wheel onto the hub and align the… | 95.0–99.0 | **0.69** |
+| 8 | screw wheel | 100.4–104.4 | Replace the wheel nuts and tighten them until t… | 99.0–105.0 | **0.67** |
+| 9 | jack down | 104.5–117.9 | Lower the jack until the spare wheel touches th… | 105.0–112.0 | **0.52** |
+| 10 | tight wheel | 108.6–132.2 | Lower the car completely, remove the jack, and… | 118.0–126.0 | 0.34 |
+| 11 | put things back | 120.9–125.6 | Lower the car completely, remove the jack, and… | 118.0–126.0 | **0.58** |
 
-**Recall 4/11 = 36%; mean IoU 0.60 over matched steps, 0.22 over all 11.** Where
-run A predicts, localization is good. It simply stops.
+**11/11 reference steps covered, 9/11 at IoU ≥ 0.3, 7/11 at IoU ≥ 0.5**, mean IoU
+0.49. Generated from `data/mga-output.json` by `evaluate.py`, so re-running the
+example regenerates these numbers rather than contradicting them.
+
+The four rows below 0.4 are the interesting ones, and they are **two pairs of
+reference steps collapsing onto one prediction each**: steps 5 and 6 both land on
+"Remove the wheel nuts and take off the flat tire", and 10 and 11 both on "Lower
+the car completely, remove the jack, and store the tools". That is the residue of
+the same bundling that makes a coarse manual score well and read badly. Every other
+row sits at 0.5–0.69.
+
+Now that `prompt` is settable, that is an actionable lever rather than a
+limitation — an instruction asking for nut removal and wheel removal as separate
+steps would likely split them. Untested.
+
+Step 1 is the other sub-0.4 row, for a different reason: the prediction starts at
+11.0 s where the reference starts at 14.8 s, and the two annotators disagree about
+that step by 17× (below).
 
 **IoU** (Intersection over Union) measures how much the predicted and true time
 spans agree: `overlap / total time covered by either`. 1.0 is exact, 0.0 is no
 overlap, and **0.5 is the conventional threshold for "counts as a correct
-detection"** in temporal action localization. Worked example, step 3:
+detection"** in temporal action localization. Worked example, reference step 3:
 
 ```
 reference   46.5 ─────────────────────── 63.9        (17.4 s)
-prediction        50.0 ──────────────────────── 66.0 (16.0 s)
-overlap           50.0 ─────────────── 63.9         (13.9 s)
-union       46.5 ────────────────────────── 66.0    (19.5 s)
-                              IoU = 13.9 / 19.5 = 0.71
+prediction        50.0 ────────── 60.0               (10.0 s)
+overlap           50.0 ────────── 60.0               (10.0 s)
+union       46.5 ─────────────────────── 63.9        (17.4 s)
+                              IoU = 10.0 / 17.4 = 0.57
 ```
 
 It penalizes both error directions, which is why it beats comparing midpoints — a
 prediction centred correctly but three times too long scores well on midpoint
 distance. Three caveats on these numbers:
 
-- IoU alone does not say *which* direction the error goes. Step 1 is too short
-  (prediction inside reference), step 2 too long (reference inside prediction), and
-  both score ~0.6.
+- IoU alone does not say *which* direction the error goes. Step 3's prediction sits
+  inside its reference; step 2's contains it; both score ~0.56.
 - Reference intervals are merged across two annotators (earliest start, latest
   end), which inflates their duration and slightly deflates every score.
 - **The two annotators disagree severely on step 1** — one marked `[25.6–26.4]`
-  (0.8 s), the other `[14.8–28.9]` (14.1 s), a 17× difference. That step's 0.64 is
-  softer evidence than the other three.
+  (0.8 s), the other `[14.8–28.9]` (14.1 s), a 17× difference. That row's 0.35 is
+  softer evidence than the rest.
 
 ### The sampling floor
 
@@ -709,7 +730,7 @@ At `max_frames: 64` on a 173 s video, frames land every 2.7 s, so boundaries can
 be resolved finer than that however good the model is. On a 6-second reference step
 that caps IoU around 0.7–0.8 even for a perfect prediction.
 
-### `max_frames` changes the words, not the outcome
+### `max_frames` — measured only while the token cap bound  ⏮ HISTORIC
 
 | | `max_frames=64` | `max_frames=32` |
 |---|---|---|
@@ -718,12 +739,155 @@ that caps IoU around 0.7–0.8 even for a perfect prediction.
 | **Words generated** | **83** | **83** |
 | Characters | 441 | 449 |
 | Final step cut at | `…and raise the car` | `…Locate the jacking point under the` |
-| md5 | `080e551a…` | `7d3ed9c3…` |
 
 Two entirely different generations landing on the **same word count**, each cut
-mid-clause. It also shows verbosity trading directly against coverage: `mf=32`
-produced richer descriptions and 4 s *less* coverage. A `max_frames` sweep is
-therefore deferred — it cannot measure anything while the cap binds.
+mid-clause — because at 256 tokens the budget, not the frame count, decided the
+length. That is why both rows say 6 steps.
+
+**This is no longer the binding constraint**, so the comparison says nothing about
+what `max_frames` is worth today. A real sweep is still owed: 64 is used
+throughout here because it matches the reader and preprocessor batch size, not
+because it was measured against 16 or 128 on an uncapped run.
+
+## Lessons learned (as of 2026-08-13)
+
+What five blueprint versions, five token budgets and a reproduction on a second
+machine actually settled — and what they did not.
+
+### 1. The setting you need is the one that is not exposed, and it moves
+
+Twice in five days the value that decided whether the manual was usable was one the
+blueprint did not wire. First `max_new_tokens`, hardcoded at 256, which truncated a
+173 s video to 6 steps with the last cut mid-clause. Then `prompt`, hardcoded to
+*"…with 10 steps or less"*, which halved the manual by wording rather than by
+content. Both are fixed now; neither was fixed when the documentation about it was
+written.
+
+The failure is silent in the only place you would look: an unwired value is
+accepted with **HTTP 201 and echoed straight back to you in `values`**. So the
+durable lesson is not either defect — it is that **a value is honoured only if it
+is declared in `values` *and* referenced as `${values.<key>}` by some node**, and
+that costs one GET to check and 15 minutes of GPU to discover the hard way.
+
+```
+blueprint blp_6va7xxnrrn9fr8ybhgz3v3zvw7 (key=mga, active=True)
+  honoured: ['max_frames', 'max_new_tokens', 'prompt']
+```
+
+### 2. `max_new_tokens` is a floor, not a ceiling
+
+The model reasons before it answers and pays for the reasoning out of the same
+budget, so below a threshold it never reaches an answer at all. Same video, same
+prompt, only the budget changing:
+
+| 2048 | 4096 | **16384** | 32768 | 65536 |
+|---|---|---|---|---|
+| 0 steps | 0 steps | **18 steps** | 18 steps | 18 steps |
+
+The last three are **byte-identical** — generation is deterministic at temperature
+0 — so the threshold sits between 4k and 16k and nothing above it changes the
+answer. **Lowering this does not give you a shorter manual, it gives you no
+manual.**
+
+Worth contrasting with the sibling `tva` example, where raising the budget turned a
+correct answer into no answer. Same knob, opposite direction, because the failure
+modes differ: MGA ran out of room before finishing its reasoning; TVA had room to
+rehearse a verdict twelve times and lose it. **Neither "raise it" nor "lower it" is
+the lesson — measure it on your own input, and read the parser's warning.**
+
+### 3. Recall rewards the manual you would not want
+
+The 10-step run scores **better** than today's 18-step run at IoU ≥ 0.3 — 10/11
+against 9/11 — and is plainly the worse manual. MGA tiles the timeline
+contiguously, so fewer steps means longer ones that overlap more of any reference
+interval. Tighten the threshold and it inverts: **4/11 against 7/11 at IoU ≥ 0.5.**
+
+What recall cannot see at all is that the 10-step run bundles **3.2 actions into
+the average step and 7 into its worst**, against 1.7 and 4. An operator cannot tick
+off "apply the parking brake" separately from "switch off the ignition", and each
+step gets one frame thumbnail however many actions it contains. **Evaluate a manual
+by whether it can be followed, not only by temporal recall.**
+
+### 4. `file_id` is a mutable pointer in an org-wide namespace
+
+`file_id` **is the filename**. Upload the same name again and it repoints to a new
+object, orphaning the old one:
+
+```
+upload 1: {"file_id": "clip.mp4", "file_uid": "fil_58shkhqzt…"}
+upload 2: {"file_id": "clip.mp4", "file_uid": "fil_6zmefmn6m…"}
+```
+
+The timing is what makes it lethal. A run resolves its inputs at **submit** time
+but does not fetch the bytes until after ~7.5 min of model loading, so any upload
+of that name inside the window kills a run that already looked healthy — and it
+surfaces as `S3 object not found`, which reads as a storage fault and implicates
+nothing. It killed three runs here in one afternoon. **Suffix every upload**;
+the video stem alone is not enough, because two runs of one video collide and so
+does a colleague running the same file.
+
+### 5. Nothing about an empty run looks broken
+
+`status: ready`, HTTP `202`, `running` → `completed`, no ERROR row, and a 38-byte
+output containing `{"id": "…", "results": []}`. Every signal says success. The one
+thing that distinguishes it is a `WARN` in `/logs`:
+
+```
+WARN parser.running  ManualGenerationResultsParserNode: generation ended inside the
+  model's reasoning block, so it never produced an answer; dropping 0 rehearsed row(s).
+```
+
+That warning did not exist a week ago, and without it an empty manual was
+indistinguishable from a working one. **Count the steps in every output before you
+trust a run**, and treat `/logs` as the only honest channel — the `status` field
+lies in both directions.
+
+### 6. Target the blueprint key; a pinned id fails late and quietly
+
+`mga` was republished **three times in the week of 2026-08-11**. A superseded id
+still reads back, still creates a bundle (`201 ready`), still starts a run
+(`202 running`) — and then the pod dies one second in with `resolving blueprint:
+invalid config for 1 node(s)`. This example defaulted to such an id and every run
+failed until it was switched back to the key. **Reading a blueprint back
+successfully tells you nothing about whether a run against it will resolve.**
+
+### 7. A reproducibility check that hashes the wrong thing is worse than none
+
+Self-inflicted, and the sharpest lesson here. `KNOWN_MD5` hashed the **file bytes**,
+so when the output serialization changed — same manual, different whitespace — the
+script told a colleague who had reproduced the run *exactly* that they had not. A
+check whose entire job is answering "did the model give me the same answer" cannot
+be sensitive to how we happened to format the file. It now hashes the parsed manual
+with sorted keys. **Digest the thing you are actually claiming is reproducible.**
+
+### 8. Dev does not serialize jobs
+
+Four submissions once produced ~800 s queue waits, which looked like a queue. It is
+not: three concurrent runs came up as **three concurrent pods**, and one was
+SIGKILLed mid-load (`pod.terminated  Error (exit=137)`). Run one at a time unless
+you are deliberately testing this.
+
+### What this establishes, and what it does not
+
+**Establishes**, on one 173 s video: the mechanics end to end, reproduced
+byte-for-byte on a second machine; a measured reasoning floor between 4k and 16k
+tokens with everything above it inert; that a caller-supplied prompt roughly halves
+action-bundling (3.2 → 1.7 per step) and is what lets a spoken-only instruction
+become its own step; and that loose-threshold recall ranks these manuals in the
+wrong order.
+
+**Does not establish**: accuracy on other tasks or videos, behaviour above the
+~5-minute single-input ceiling, or whether the floor is 16384 rather than something
+between 4k and 16k — three budgets were tested, not the interval. Every IoU figure
+is a single observation on a video whose two annotators disagree with each other by
+up to 17×. **Treat these as red flags worth reproducing, not as MGA's accuracy.**
+
+**Not settled** — why restoring `prompt` did not restore every caution. Run C found
+three spoken cautions, today's run finds one. C differs in blueprint, model build
+*and* token budget as well as prompt, so nothing here isolates the cause. Also
+untested: `size` (224 throughout; `null` keeps source resolution and is the obvious
+lever if on-screen text matters), and chunking long videos, which the companion app
+does but this example does not.
 
 ## Platform behavior worth knowing
 
