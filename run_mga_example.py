@@ -114,17 +114,75 @@ BLUEPRINT_DEFAULT = "mga"
 # and NOT how to format it: ManualGenerationResultsParserNode owns the output
 # template, and a prompt that specifies its own format (markdown headings, for
 # instance) makes the parser return zero steps. This one parses cleanly.
+#
+# REPLACED 2026-08-20. The previous instruction was:
+#
+#   "Generate a concise, ordered list of every distinct step performed in this
+#    video, covering the procedure from the first action to the last. Include
+#    brief steps and steps that are repeated. Use up to 20 steps. Keep each step
+#    to at most 15 words. Use both what is shown and what is said. Do not invent
+#    steps that are not shown or stated in the video."
+#
+# It degenerated on a second clip. On an 80 s silent mouse-assembly video it
+# emitted 16 steps with TWO distinct strings — "Take out the battery." fifteen
+# times in a row, on a wired USB mouse with no battery in it. Two clauses caused
+# it: "concise" plus "at most 15 words" drove a 4-word median, and nothing in the
+# text required consecutive steps to differ, so the decoder re-emitted its own
+# highest-probability sentence at temperature 0 with repetition_penalty 1.0.
+#
+# What replaced them, each clause against an observed failure:
+#
+#   enumerated detail    Naming the KINDS of detail wanted (part names, quoted
+#                        on-screen text, part numbers, tool sizes, direction of
+#                        movement) makes a repeated string impossible to emit.
+#                        This is the anti-loop mechanism; the word cap was not.
+#   distinctness rule    "Each step must describe a different action from the one
+#                        before it" — aimed directly at the loop above.
+#   imperative framing   Without it the model narrates rather than instructs.
+#   modality clause      "rely on the picture alone where the video is silent".
+#                        The mouse clip has NO audio stream, so an instruction to
+#                        use what is "said" invites an invented narration.
+#
+# Measured effect, same clip and config, only the prompt changed:
+#
+#   mouse_assembly.mp4   before: 16 steps,  2 unique, 14 consecutive repeats
+#                        after:  16 steps, 16 unique,  0 repeats
+#   tire_i2JWkDyg26A     before: 21 steps, 0-111s, 8/11 reference steps, 1 at IoU>=0.5
+#                        after:  20 steps, 14-138s, 9/11 reference steps, 4 at IoU>=0.5
+#
+# Both tire runs were made on 2026-08-20 against blp_3e0hmpqfgc93wvncmr8m30eeny,
+# so that pair IS controlled. Do not compare either against the 18-step run in
+# reference/: that is an older blueprint and no longer reproduces.
+#
+# What it did NOT fix, so you know the limits: the grid-term clause produced zero
+# grid terms on either clip, and no on-screen text was ever quoted — every frame
+# is resized to 224x224 before the model sees it (`size`, not sent here), which
+# destroys label text. On the mouse clip the manual is still largely invented: it
+# describes a teardown that is not in the footage.
 DEFAULT_PROMPT = (
-    "Generate a concise, ordered list of every distinct step performed in this "
-    "video, covering the procedure from the first action to the last. Include "
-    "brief steps and steps that are repeated. Use up to 20 steps. Keep each step "
-    "to at most 15 words. Use both what is shown and what is said. Do not invent "
-    "steps that are not shown or stated in the video."
+    "Generate an ordered list of every distinct step performed in this video, in "
+    "order. Include brief steps and steps that are repeated. Write each step as a "
+    "direct, actionable instruction, as if telling the reader what to do. Do not "
+    "narrate or describe what is happening in the video. Capture the details "
+    "needed to repeat the action exactly: control and part names, printed and "
+    "on-screen text quoted word for word, part numbers, model and serial numbers, "
+    "tool types and sizes, quantities, and which way things move. For every "
+    "component being handled, state where it is using grid terms such as top-left, "
+    "top-right, bottom-left, bottom-right, center-left, or upper-center. Where "
+    "several similar actions are performed, such as four screws on one panel, "
+    "treat each as its own step and say what distinguishes it. Where the video "
+    "shows how to tell the step worked, say that. Base every step on what is "
+    "visible; use the spoken narration where there is any, and rely on the picture "
+    "alone where the video is silent. Each step must describe a different action "
+    "from the one before it \u2014 where two moments look alike, state what changed "
+    "between them. Do not invent steps, parts, or details that are not shown or "
+    "stated in the video."
 )
 # The model REASONS BEFORE IT ANSWERS, and the reasoning is paid for out of this
 # budget. Set it too low and generation ends mid-reasoning having emitted no
 # answer at all: the job still reports `completed`, with no ERROR row and
-# `results: []`. Measured on the 173 s example clip, 2026-08-13:
+# `results: []`. Measured on the 173 s example clip, 2026-08-13, with the PREVIOUS
+# default prompt and the blueprint canonical that day:
 #
 #     2048  ->  0 steps      4096  ->  0 steps
 #    16384  -> 18 steps     32768  -> 18 steps     65536  -> 18 steps
@@ -133,6 +191,12 @@ DEFAULT_PROMPT = (
 # 0), so the threshold is between 4k and 16k and nothing above 16k changes the
 # answer. Do not lower this to "save tokens" — below the threshold you do not get
 # a shorter manual, you get no manual.
+#
+# The STEP COUNTS above are from that prompt and that blueprint and no longer
+# reproduce — today's default yields 20 steps at 16384. The THRESHOLD is the
+# claim worth keeping, and it has not been re-measured since the prompt changed.
+# A longer prompt does not spend this budget (it is input, not output), but the
+# reasoning phase it provokes might, so treat 16384 as the floor it always was.
 DEFAULT_MAX_NEW_TOKENS = 16384
 
 # What the defaults below produce on dev. These are CONTENT digests — md5 over the
@@ -140,8 +204,17 @@ DEFAULT_MAX_NEW_TOKENS = 16384
 # output cannot break the check. Hashing bytes did break it once: changing the
 # separators in normalise_id() told everyone who had reproduced the run exactly
 # that they had not.
-KNOWN_MD5 = "caaea09f1c19645d444fb6ce33f1b139"   # 18 steps, 11-139s of 173s
-# Same clip and prompt at max_new_tokens 4096: an empty manual, 38 bytes.
+# 20 steps, 14-138s of 173s. Measured 2026-08-20 on blp_3e0hmpqfgc93wvncmr8m30eeny
+# with DEFAULT_PROMPT above; committed as
+# reference/mga-output-i2JWkDyg26A-20260820-20steps.json.
+#
+# The previous value, caaea09f1c19645d444fb6ce33f1b139 (18 steps, 11-139s), was
+# measured 2026-08-13 and is NOT reproducible today even with the old prompt: the
+# same prompt on today's blueprint gives 8b30b0ad6b83bb4a74ea59e37624246c, 21
+# steps over 0-111s. The blueprint moved under it. Expect this to happen again.
+KNOWN_MD5 = "a074294237a829f98be4fb0c82925583"
+# An empty manual is `{"id": ..., "results": []}` — it carries no generated text,
+# so this digest does not depend on the prompt and survived the change above.
 EMPTY_MD5 = "1e724b1286bd1771ec6b3856b47d4daa"
 # The original 256-token-capped output, for historic comparison.
 TRUNCATED_MD5 = "275677ab10f75f4eb26e3c07d4154f85"
