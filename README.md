@@ -46,10 +46,16 @@ surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
 checks for both tools before it starts. (Already have the clip? Point `--video` at
 it and neither tool is needed.)
 
-**What you get:** an 18-step manual covering 11–139 s of the 173 s clip, each step
+**What you get:** a 20-step manual covering 14–138 s of the 173 s clip, each step
 carrying a start and end timestamp you can trace back to the video, plus a content digest
-that should match `caaea09f…` exactly — generation is deterministic at
+that should match `a0742942…` exactly — generation is deterministic at
 temperature 0, so a matching digest means you reproduced the reference run.
+
+The clip's first 14 s are a music intro and its last 35 s are Toyota branding, so
+14–138 s is the whole procedure, not a truncation. **A digest that differs does not
+mean you did anything wrong.** The canonical `mga` blueprint is republished under
+this example every few days and the output moves with it — the digest documented
+here before this one stopped reproducing within a week, on an unchanged prompt.
 
 Two settings decide whether that works, and both have silent failure modes:
 
@@ -142,8 +148,13 @@ A–D are kept because they are the evidence for what the instruction is worth:
 Every number above is computed from the committed outputs, so `python3 evaluate.py
 --compare reference/*.json` reproduces the whole table offline.
 
+**A–E are history, not a status board.** Each column is the blueprint that was
+canonical on its day, and none of them reproduces now. Column E in particular is
+no longer what this example produces — see
+[What replaced it](#what-replaced-it-2026-08-20) for the runs that are current.
+
 **Read it twice, because the metric and the manual disagree.** D scores best on
-IoU ≥ 0.3 — 10/11, better than today's E — and is the worst manual of the five.
+IoU ≥ 0.3 — 10/11, better than E — and is the worst manual of the five.
 Loose-threshold recall rewards fewer, longer steps: MGA tiles the timeline
 contiguously, so a 10-step manual has longer steps that overlap more of any
 reference interval. Tighten the threshold and the ranking inverts — at IoU ≥ 0.5
@@ -181,6 +192,62 @@ wording rather than by content — full write-up in
 result: 18 steps at 1.7 actions each, and 7 of 11 reference steps localised
 within IoU ≥ 0.5 against D's 4.
 
+### What replaced it (2026-08-20)
+
+E's instruction was the example's default for a week. It broke on the second clip
+anyone tried.
+
+On an 80 s **silent** mouse-assembly video it returned 16 steps built from two
+distinct sentences — `"Take out the battery."` fifteen times in a row, on a wired
+USB mouse that has no battery in it. Two clauses did it:
+
+| clause | what it did |
+|---|---|
+| "concise" + "at most 15 words" | drove a 4-word median; a cap that low is a target, not a limit |
+| *(nothing)* | no clause required consecutive steps to differ, so at `temperature: 0` with `repetition_penalty: 1.0` the decoder re-emitted its own most-likely sentence |
+| "use both what is shown and what is said" | the clip has no audio stream at all, so this asks for a track that does not exist |
+
+The replacement drops the word cap and the step ceiling, adds an enumerated list
+of the *kinds* of detail wanted, adds an explicit distinctness rule, and makes the
+picture the fallback when there is no narration. The full text is `DEFAULT_PROMPT`
+in `run_mga_example.py`, with a clause-by-clause rationale above it.
+
+**Measured, same clip and config, only the prompt changed:**
+
+| | previous prompt | current prompt |
+|---|---|---|
+| **mouse_assembly.mp4** (80 s, silent) | 16 steps, **2 unique**, 14 consecutive repeats | 16 steps, **16 unique**, 0 repeats |
+| **tire_i2JWkDyg26A.mp4** (173 s, narrated) | 21 steps, 0–111 s | 20 steps, **14–138 s** |
+| ref steps found (any overlap) | 8/11 | **9/11** |
+| … at IoU ≥ 0.5 | 1/11 | **4/11** |
+| content md5 | `8b30b0ad…` | `a0742942…` |
+
+Both tire runs were made on 2026-08-20 against `blp_3e0hmpqfgc93wvncmr8m30eeny`,
+so **that pair is controlled** — same blueprint, same `max_frames`, same
+`max_new_tokens`, prompt the only difference. All four outputs are committed under
+`reference/…-20260820-…json`.
+
+**Do not compare either against E.** E is an older blueprint. Re-running E's exact
+prompt today gives 21 steps over 0–111 s, not 18 over 11–139 s — so the drop from
+E's 11/11 to today's 9/11 is the platform moving, not the prompt. Getting this
+wrong once cost an afternoon: the first read of these numbers scored the new
+prompt against E, concluded it was a regression, and was wrong.
+
+**What the new prompt did NOT fix**, stated plainly so nobody re-derives it:
+
+- **Zero grid terms on either clip.** The clause naming top-left/upper-center and
+  friends produced nothing, twice. On this evidence it is inert against this model.
+- **No on-screen text was ever quoted.** It cannot be: `size` defaults to 224, so
+  every frame is squashed to 224×224 before the model sees it and label text is
+  gone. Raising `size` is the lever, not wording — untested here.
+- **The mouse manual is still largely invented.** It opens with a six-step teardown
+  that is not in the footage and ends by plugging the mouse into a computer, which
+  also never happens. Fixing the loop did not make it grounded.
+- **Neither of today's runs finds `unscrew wheel` / `withdraw wheel`** (89–94 s).
+  Both spend that window on a spoken caution instead. The previous prompt misses it
+  too, so this is not a regression — but the manual is missing a real step, and
+  "take the flat tire off" is not an optional part of changing a tire.
+
 ⚠️ **`max_new_tokens` is a floor, not a ceiling.** The model reasons before it
 answers out of the same budget, so below the threshold it never reaches an answer
 and you get `job.completed`, no error row, `results: []`. On this video:
@@ -192,6 +259,10 @@ and you get `job.completed`, no error row, `results: []`. On this video:
 The last three are byte-identical (generation is deterministic at temperature 0),
 so the threshold is between 4k and 16k and nothing above it helps. Lowering this
 does not shorten the manual — it empties it, silently.
+
+Measured 2026-08-13 on the previous prompt and the blueprint canonical that day,
+so read the **threshold**, not the step counts — today's default returns 20 steps
+at 16384. The sweep has not been repeated since the prompt changed.
 
 Run A is confirmed across **three runs on two machines**, and E across **three
 budgets** (16384/32768/65536) — byte-identical every time, because generation is
@@ -324,9 +395,9 @@ python3 run_mga_example.py --dry-run     # print the exact payload, call nothing
 | Value | This example sends | Honoured today? | Notes |
 |---|---|---|---|
 | `max_frames` | **64** | ✅ | Blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see 3d. |
-| `max_new_tokens` | **16384** | ✅ | Was the first defect (hardcoded **256**, manual truncated). Now settable and the blueprint's own default. It is a **floor**: the model reasons out of this budget, so 2048 and 4096 both return an EMPTY manual on this video while 16384/32768/65536 return the same 18 steps. |
+| `max_new_tokens` | **16384** | ✅ | Was the first defect (hardcoded **256**, manual truncated). Now settable and the blueprint's own default. It is a **floor**: the model reasons out of this budget, so 2048 and 4096 both return an EMPTY manual on this video while 16384/32768/65536 all returned the same manual. (Step counts from that sweep are 2026-08-13 figures on the previous prompt; the threshold is the durable claim and has not been re-measured since.) |
 | `size` | not sent (224) | ✅ | Every frame is resized to `size × size` before the model sees it. `null` keeps the source resolution. Untested here; the obvious lever if on-screen text is unreadable. |
-| `prompt` | a coverage instruction | ✅ | Was the second defect: hardcoded to "10 steps or less" between 2026-08-11 and 08-12, so a caller's instruction was accepted and discarded. Wired again as `${values.prompt}` (**PLDEV-1730**). Say what to COVER, never how to format — the results parser owns the template. |
+| `prompt` | a detail-oriented instruction | ✅ | Was the second defect: hardcoded to "10 steps or less" between 2026-08-11 and 08-12, so a caller's instruction was accepted and discarded. Wired again as `${values.prompt}` (**PLDEV-1730**). Say what to COVER, never how to format — the results parser owns the template. Rewritten 2026-08-20 after the previous instruction degenerated on a second clip — see [What replaced it](#what-replaced-it-2026-08-20). |
 
 **Both defects are fixed; the pattern is the point.** Twice in five days the
 setting that decided whether the manual was usable was one the blueprint did not
@@ -444,7 +515,9 @@ just: the last prediction ends at 120.0 s.
 
 #### Run C — budget plus a coverage-oriented instruction
 
-Same as B, plus `--prompt`:
+Same as B, plus `--prompt`. This was the example's default instruction until
+2026-08-20; it is quoted here as what Run C sent, not as what the example sends
+today — see [What replaced it](#what-replaced-it-2026-08-20):
 
 > Generate a concise, ordered list of every distinct step performed in this video,
 > covering the procedure from the first action to the last. Include brief steps and
@@ -597,7 +670,7 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: applicat
     "values": {
       "max_frames": 64,
       "max_new_tokens": 16384,
-      "prompt": "Generate a concise, ordered list of every distinct step performed in this video, covering the procedure from the first action to the last. Include brief steps and steps that are repeated. Use up to 20 steps. Keep each step to at most 15 words. Use both what is shown and what is said. Do not invent steps that are not shown or stated in the video."
+      "prompt": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it — where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video."
     }
   }'
 
@@ -778,7 +851,8 @@ blueprint blp_6va7xxnrrn9fr8ybhgz3v3zvw7 (key=mga, active=True)
 
 The model reasons before it answers and pays for the reasoning out of the same
 budget, so below a threshold it never reaches an answer at all. Same video, same
-prompt, only the budget changing:
+prompt, only the budget changing (2026-08-13, on the prompt that was default then
+— the step counts are of their day, the threshold is the claim):
 
 | 2048 | 4096 | **16384** | 32768 | 65536 |
 |---|---|---|---|---|
@@ -797,7 +871,7 @@ the lesson — measure it on your own input, and read the parser's warning.**
 
 ### 3. Recall rewards the manual you would not want
 
-The 10-step run scores **better** than today's 18-step run at IoU ≥ 0.3 — 10/11
+The 10-step run scores **better** than run E at IoU ≥ 0.3 — 10/11
 against 9/11 — and is plainly the worse manual. MGA tiles the timeline
 contiguously, so fewer steps means longer ones that overlap more of any reference
 interval. Tighten the threshold and it inverts: **4/11 against 7/11 at IoU ≥ 0.5.**
@@ -956,7 +1030,7 @@ Observations for the author, not defects.
   work by videos overflowing the context window. In practice the constraints are
   the ~5-minute ceiling and the *output* budget — and not because the manual is
   long: the budget is consumed by a reasoning phase the doc does not describe,
-  which is why 4096 tokens yields no manual at all while 16384 yields 18 steps, at
+  which is why 4096 tokens yields no manual at all while 16384 yields a full one, at
   0.15–0.6% context utilization throughout.
 - **The model is fp8** — `f1_0_35b_a3b_fp8_base_040625b4d0750b`, confirming the
   35B/3B-active MoE description and adding quantization the doc does not mention.
@@ -1103,18 +1177,27 @@ checklist is done:
 |---|---|---|
 | 1 | Point the example at the active blueprint | ✅ both scripts default to the key `mga` |
 | 2 | Track new blueprint versions | ✅ solved by using the key rather than an id |
-| 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 18-step run on the current blueprint, re-validated 2026-08-13 |
+| 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 20-step run, re-measured 2026-08-20 on `blp_3e0hmp…`. It went stale within a week last time; expect to redo this |
 | 4 | Revisit the `--max-new-tokens` default | ✅ 16384 — measured; 4096 returns an empty manual, above 16384 changes nothing |
-| 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12 — **PLDEV-1730** landed |
+| 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12 — **PLDEV-1730** landed. Instruction rewritten 2026-08-20 after it degenerated on a second clip |
 | 6–7 | Re-frame the headline and Stage 3 | ✅ both defects fixed; the framing is now the recurring pattern |
 | 8 | Delete this section | ⏳ once the ladder above has been re-run on a second video |
 
-**`KNOWN_MD5` is live again.** It was stale for a while — the digest of the 19-step
-run, which needed a caller-supplied prompt that the blueprint had stopped
-accepting. With `prompt` restored it has been re-measured on the current
-blueprint: `caaea09f1c19645d444fb6ce33f1b139`, 18 steps, and a matching digest
-means you reproduced the run exactly. `EMPTY_MD5` is next to it so a run that came
-back empty is named rather than left as a mystery.
+**`KNOWN_MD5` goes stale, and that is the normal case.** It has now been wrong
+twice for two different reasons. First it was the digest of the 19-step run, which
+needed a caller-supplied prompt the blueprint had stopped accepting. Then it was
+`caaea09f…` (18 steps, 11–139 s), measured 2026-08-13 — and by 08-20 that no longer
+reproduced *on an unchanged prompt*, because the canonical blueprint had been
+republished under it; the same instruction now returns 21 steps over 0–111 s.
+
+It is currently `a074294237a829f98be4fb0c82925583` — 20 steps, 14–138 s, measured
+2026-08-20 on `blp_3e0hmpqfgc93wvncmr8m30eeny` with the current `DEFAULT_PROMPT`,
+and committed as `reference/mga-output-i2JWkDyg26A-20260820-20steps.json` so the
+check can be run offline. **A mismatch is more likely to mean the blueprint moved
+than that you did something wrong** — check `blueprint <id>` in the run's own
+output before assuming otherwise. `EMPTY_MD5` sits next to it so a run that came
+back empty is named rather than left as a mystery; an empty manual carries no
+generated text, so that one digest is prompt-independent and has never moved.
 
 **What should *not* change:** `repro_truncation.py` keeps its committed baselines.
 Its wired-value preflight reads the blueprint document rather than hardcoding key

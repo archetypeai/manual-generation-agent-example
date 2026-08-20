@@ -20,7 +20,8 @@ the instruction, not the budget. At the blueprint's own default of 2048 the same
 configuration returns **zero steps** with `job.completed` and no error
 (`reference/mga-output-i2JWkDyg26A-NEWBP-mnt2048-EMPTY.json`, 39 bytes).
 
-The instruction both runs sent:
+The instruction both runs sent — the example's default until 2026-08-20, kept
+here as the record of what these runs used, not as current guidance:
 
 > Generate a concise, ordered list of every distinct step performed in this video,
 > covering the procedure from the first action to the last. Include brief steps and
