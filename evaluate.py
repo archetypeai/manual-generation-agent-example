@@ -273,6 +273,17 @@ def main() -> None:
         if "results" not in rec:
             print(f"skipping {os.path.basename(f)}: not an MGA output")
             continue
+        # An output for a DIFFERENT video scores as nonsense rather than as an
+        # error: the reference procedure is per-task, so a mouse-assembly manual
+        # silently comes back "4/11 reference steps" against the tire annotations.
+        # `reference/` holds outputs for more than one clip, and `--compare
+        # reference/*.json` is the documented way to reproduce the ladder, so this
+        # has to be caught here rather than left to the reader.
+        rid = str(rec.get("id", ""))
+        if rid and args.video not in rid:
+            print(f"skipping {os.path.basename(f)}: id {rid!r} is not "
+                  f"video {args.video!r} — pass --video to score it")
+            continue
         scorable.append(f)
     if not scorable:
         sys.exit("no MGA output files to score")
