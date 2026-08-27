@@ -297,7 +297,7 @@ account for a difference. Same prompt, same `max_frames`, same `max_new_tokens`,
 same blueprint, minutes apart. Both digests have been reproduced independently on
 a second machine and a later day.
 
-| | with audio (`a0742942…`) | silent (`26d1fbc2…`) |
+| | [**with audio**](reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json) (`a0742942…`) | [**silent**](reference/mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json) (`26d1fbc2…`) |
 |---|---|---|
 | steps | 20 | 16 |
 | coverage | 14–138 s | 0–128 s |
@@ -321,6 +321,34 @@ prying off a hubcap it never mentions at all. That distinction is not academic h
 because every step carries `frame_start`/`frame_end` and the downstream app renders
 per-step thumbnails from them — so the prose reads correctly while the illustration
 beside it shows a different action, with nothing to signal the mismatch.
+
+**Both manuals are committed, so you can compare them without a GPU** — they are the
+only two files in `reference/` that differ in exactly one input:
+
+- [`mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json`](reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json) — the narrated run. Also the `KNOWN_MD5` reference.
+- [`mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json`](reference/mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json) — the same footage with the audio track stripped.
+
+```sh
+# side by side, scored against the CrossTask reference procedure
+python3 evaluate.py --compare \
+  reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json \
+  reference/mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json
+
+# read either one as a manual; the silent one trips the uniform-duration warning
+python3 run_mga_example.py --show reference/mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json
+```
+
+To regenerate them, strip the audio and run the example twice with no other flags —
+the defaults are what both runs used:
+
+```sh
+ffmpeg -i data/clips/tire_i2JWkDyg26A.mp4 -an -c:v copy data/clips/tire_i2JWkDyg26A-silent.mp4
+python3 run_mga_example.py --video data/clips/tire_i2JWkDyg26A.mp4        --output data/tire.json
+python3 run_mga_example.py --video data/clips/tire_i2JWkDyg26A-silent.mp4 --output data/tire-silent.json
+```
+
+(Outputs land in `data/`, which is gitignored — the curated copies under
+`reference/` are the tracked evidence.)
 
 **Step boundaries appear to come from the transcript.** Across every run measured:
 
@@ -1280,7 +1308,7 @@ republished under it; the same instruction now returns 21 steps over 0–111 s.
 
 It is currently `a074294237a829f98be4fb0c82925583` — 20 steps, 14–138 s, measured
 2026-08-20 on `blp_3e0hmpqfgc93wvncmr8m30eeny` with the current `DEFAULT_PROMPT`,
-and committed as `reference/mga-output-i2JWkDyg26A-20260820-20steps.json` so the
+and committed as `reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json` so the
 check can be run offline. **A mismatch is more likely to mean the blueprint moved
 than that you did something wrong** — check `blueprint <id>` in the run's own
 output before assuming otherwise. `EMPTY_MD5` sits next to it so a run that came

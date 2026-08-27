@@ -206,7 +206,7 @@ DEFAULT_MAX_NEW_TOKENS = 16384
 # that they had not.
 # 20 steps, 14-138s of 173s. Measured 2026-08-20 on blp_3e0hmpqfgc93wvncmr8m30eeny
 # with DEFAULT_PROMPT above; committed as
-# reference/mga-output-i2JWkDyg26A-20260820-20steps.json.
+# reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json.
 #
 # The previous value, caaea09f1c19645d444fb6ce33f1b139 (18 steps, 11-139s), was
 # measured 2026-08-13 and is NOT reproducible today even with the old prompt: the
