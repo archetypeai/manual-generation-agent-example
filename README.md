@@ -284,6 +284,71 @@ checkable offline with no API key:
 python3 evaluate.py --compare reference/*.json
 ```
 
+### The narration ablation (2026-08-27)
+
+The prompt work above left one question open: how much of a good manual comes from
+the picture, and how much from the transcript? The tire clip answers it, because it
+can be run twice with only the audio track differing.
+
+`ffmpeg -i tire_i2JWkDyg26A.mp4 -an -c:v copy tire_i2JWkDyg26A-silent.mp4` strips
+the audio without touching a frame — **the two files' video bitstreams are
+byte-identical**, `0f1ca9b272bf15676c2cdb39012a893a` for both, so nothing else can
+account for a difference. Same prompt, same `max_frames`, same `max_new_tokens`,
+same blueprint, minutes apart. Both digests have been reproduced independently on
+a second machine and a later day.
+
+| | with audio (`a0742942…`) | silent (`26d1fbc2…`) |
+|---|---|---|
+| steps | 20 | 16 |
+| coverage | 14–138 s | 0–128 s |
+| distinct step durations | 7 | **1 — every step exactly 8.0 s** |
+| hubcap step (visible at 47 s) | ✅ | ✗ |
+| "80 km/h", "Toyota repairer", "check the nuts after a couple of hundred km" | ✅ | ✗ |
+| both spoken safety cautions | ✅ | ✗ |
+| vocabulary | the video's — "wheel nuts", "wrench", "in sequence" | generic — "lug nuts", "lug wrench", "**star pattern**" (never said in this video) |
+| invented content | — | "check the tire pressure of the spare", "drive to the nearest service station" |
+
+**Removing narration does not degrade the manual. It changes what the manual is.**
+The silent run is a competent, generic, wikiHow-shaped tire change recited over an
+even 8-second grid — and its steps are displaced 20–50 s from what the footage
+shows at that time. It puts "loosen the lug nuts" at 24–32 s; the video loosens them
+at 50–64 s, and removes a hubcap at 45–50 s that the silent run never mentions.
+
+**Step boundaries appear to come from the transcript.** Across every run measured:
+
+| clip | audio? | steps | distinct step durations |
+|---|---|---|---|
+| tire, new prompt | yes | 20 | 7 |
+| tire, previous prompt | yes | 21 | 6 |
+| tire, silent | **no** | 16 | **1** (8.0 s) |
+| mouse_assembly, new prompt | **no** | 16 | **1** (5.0 s) |
+| mouse_assembly, previous prompt | **no** | 16 | **1** (5.0 s) |
+
+Perfect separation. With no audio there is nothing to segment on, so the timeline is
+divided `duration / n_steps` and the timestamps carry no information. That is cheap
+to detect, so `run_mga_example.py` now warns when every step has the same length. It
+also explains the mouse clip's manual, which is invented in the same way for the
+same reason — that clip has no audio stream at all.
+
+**This is why the tire manual is good and the mouse manual is not.** The pipeline's
+strength is turning narration into ordered, timestamped steps. On a silent clip
+there is no fallback to the picture; there is a fallback to the model's prior.
+
+⚠️ **The headline metric prefers the worse manual.** `evaluate.py` scores the silent
+run **11/11** reference steps against the with-audio run's 9/11. Its matches are
+nonsense — *jack up* ↔ "tighten the lug nuts in a star pattern", *unscrew wheel* ↔
+"fully lower the vehicle and remove the jack" — because uniform contiguous tiling
+guarantees every reference interval overlaps something. Temporal recall rewards
+blanketing the timeline, not describing it correctly. Read it alongside the step
+text and the duration spread, never alone.
+
+One more asymmetry worth keeping. The silent run contains "fully remove the lug
+nuts" and "pull the flat tire off the hub" — the step the with-audio run **misses**.
+It sits at 40–56 s, where the footage shows the hubcap and the nuts being loosened.
+Right by memorised procedure, wrong by clock. The with-audio run misses it because
+it is the step a narrator is least likely to announce, being the one thing that is
+obvious on screen.
+
 ## Prerequisites
 
 Notably short compared with RED and OSM: **no `atai_core` checkout, no Omega

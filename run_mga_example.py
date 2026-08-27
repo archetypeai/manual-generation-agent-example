@@ -483,6 +483,32 @@ def fetch_results(agent_id: str, out_path: str,
     return out_path
 
 
+# The reference video, as it appears in a record's `id`. The digest below is for
+# THIS clip; comparing another video's manual against it is meaningless.
+REFERENCE_VIDEO = "i2JWkDyg26A"
+
+
+def uniform_step_durations(results: list[dict]) -> float | None:
+    """The step length, if EVERY step has the same one — else None.
+
+    This is a grounding check, not a formatting quirk. Every run measured on a clip
+    with no audio track divided the timeline evenly (mouse_assembly: 16 x 5.0s of
+    80s; tire_i2JWkDyg26A-silent: 16 x 8.0s of 128s), while every run on a narrated
+    clip produced boundaries that vary and land on real events (7 and 6 distinct
+    durations). Step boundaries appear to come from the transcript, so with no
+    audio there is nothing to segment on and the parser falls back to
+    duration / n_steps.
+
+    When that happens the timestamps carry no information — they cannot be traced
+    back to the video — and in both measured cases the TEXT was also ungrounded:
+    a memorised generic procedure rather than a description of this footage.
+    """
+    if len(results) < 3:
+        return None
+    lengths = {round(r["timestamp_end"] - r["timestamp_start"], 3) for r in results}
+    return lengths.pop() if len(lengths) == 1 else None
+
+
 def show(path: str) -> None:
     digest = content_digest(path)
     for rec in load_records(path):
@@ -490,8 +516,22 @@ def show(path: str) -> None:
         for r in rec.get("results", []):
             print(f"  [{r['timestamp_start']:>6.1f} - {r['timestamp_end']:>6.1f}s] "
                   f"(frames {r['frame_start']:.0f}-{r['frame_end']:.0f})  {r['instruction']}")
+        step = uniform_step_durations(rec.get("results", []))
+        if step is not None:
+            print(f"\n  ⚠️  every step is exactly {step}s long. The timeline was divided"
+                  f" evenly rather\n      than localised, which is what happens when the"
+                  f" clip has no audio track.\n      Check that the video has one"
+                  f" (`ffprobe -show_streams`); if it does not, treat the\n      timestamps"
+                  f" as meaningless and the steps as probably not grounded in the\n"
+                  f"      footage — see the narration ablation in the README.")
     print(f"\ncontent md5 {digest}")
-    if digest == KNOWN_MD5:
+    ids = {str(r.get("id", "")) for r in load_records(path)}
+    if not any(REFERENCE_VIDEO in i for i in ids):
+        # Comparing a different clip's manual against this one's digest tells the
+        # reader nothing, but "differs from the reference run" reads like a result.
+        print(f"  no reference digest for {', '.join(sorted(ids)) or 'this video'} —"
+              f" KNOWN_MD5 is for {REFERENCE_VIDEO} only")
+    elif digest == KNOWN_MD5:
         print("  matches the reference run exactly (generation is deterministic)")
     elif digest == EMPTY_MD5:
         print("  this is the EMPTY result: generation ended inside the model's\n"
@@ -503,7 +543,9 @@ def show(path: str) -> None:
               "  looking at an archived file rather than a fresh run.")
     else:
         print(f"  differs from the reference run ({KNOWN_MD5}) — different video,"
-              f" max_frames, prompt, or a changed blueprint")
+              f" max_frames,\n  prompt, audio track, or a changed blueprint. The"
+              f" blueprint is the usual answer:\n  it is republished under this example"
+              f" every few days.")
 
 
 def main() -> None:
