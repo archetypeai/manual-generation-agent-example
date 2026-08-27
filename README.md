@@ -309,10 +309,18 @@ a second machine and a later day.
 | invented content | — | "check the tire pressure of the spare", "drive to the nearest service station" |
 
 **Removing narration does not degrade the manual. It changes what the manual is.**
-The silent run is a competent, generic, wikiHow-shaped tire change recited over an
-even 8-second grid — and its steps are displaced 20–50 s from what the footage
-shows at that time. It puts "loosen the lug nuts" at 24–32 s; the video loosens them
-at 50–64 s, and removes a hubcap at 45–50 s that the silent run never mentions.
+Read the silent run as a *procedure* and it functions: all 16 steps are real steps
+of a tire change, correctly ordered, at a sensible granularity, and it includes
+taking the flat wheel off — which the with-audio run misses. Someone could follow
+it. Judge it on that and it is fine.
+
+Read it as a record *of this video* and it is not. Its steps are displaced 20–50 s
+from what the footage shows at that time: it puts "loosen the lug nuts" at 24–32 s,
+where the video is opening the trunk, and "jack up" at 32–40 s, where the video is
+prying off a hubcap it never mentions at all. That distinction is not academic here,
+because every step carries `frame_start`/`frame_end` and the downstream app renders
+per-step thumbnails from them — so the prose reads correctly while the illustration
+beside it shows a different action, with nothing to signal the mismatch.
 
 **Step boundaries appear to come from the transcript.** Across every run measured:
 
@@ -334,8 +342,23 @@ same reason — that clip has no audio stream at all.
 strength is turning narration into ordered, timestamped steps. On a silent clip
 there is no fallback to the picture; there is a fallback to the model's prior.
 
-⚠️ **The headline metric prefers the worse manual.** `evaluate.py` scores the silent
-run **11/11** reference steps against the with-audio run's 9/11. Its matches are
+**And that is why the silent tire run is a trap rather than a reassurance.** It
+looks serviceable because changing a tire is in every model's training data, so the
+prior it fell back on happens to be right. The mouse clip is the same configuration
+with a prior that is not, and it produces a teardown that never happens and a
+computer that never appears. The procedures worth generating manuals for are the
+ones the model has never seen — a customer's own line, a specific machine — where
+there is no correct prior to fall back on.
+
+The practical consequence: **you cannot tell a memorised manual from an observed one
+by reading it.** Both are fluent and plausible. What separates them is whether the
+prior happened to match the footage, and the reader has no way to check that from
+the text. The uniform step duration is the one cheap signal, which is why it is now
+a warning rather than a footnote.
+
+⚠️ **The headline metric prefers the manual that is worse as a record.**
+`evaluate.py` scores the silent run **11/11** reference steps against the with-audio
+run's 9/11. Its matches are
 nonsense — *jack up* ↔ "tighten the lug nuts in a star pattern", *unscrew wheel* ↔
 "fully lower the vehicle and remove the jack" — because uniform contiguous tiling
 guarantees every reference interval overlaps something. Temporal recall rewards
