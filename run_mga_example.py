@@ -12,8 +12,9 @@ Single file, stdlib only — no pip install, no virtualenv. Copy this file plus 
     python3 run_mga_example.py --max-frames 16
     python3 run_mga_example.py --dry-run      # print the plan, call nothing
 
-Expect ~15 minutes: ~7.5 min of model download/load on every run (nothing is
-cached between runs), then ~2.5x realtime processing.
+Expect ~10 minutes on prod (617 s on 2026-10-27: ~7 min of model download and
+load on every run, since nothing is cached between runs, then ~1.1x realtime
+processing). Dev took ~15 minutes.
 
 Run ONE AT A TIME. An earlier version of this note said dev serialises jobs, on
 the strength of four submissions that produced ~800 s queue waits. That was
@@ -212,7 +213,14 @@ DEFAULT_MAX_NEW_TOKENS = 16384
 # measured 2026-08-13 and is NOT reproducible today even with the old prompt: the
 # same prompt on today's blueprint gives 8b30b0ad6b83bb4a74ea59e37624246c, 21
 # steps over 0-111s. The blueprint moved under it. Expect this to happen again.
-KNOWN_MD5 = "a074294237a829f98be4fb0c82925583"
+#
+# PROD, 2026-10-27: 16 steps, 14-138s, identical on three runs against
+# https://platform.u1.archetypeai.app/api, blp_7vc935235b964bw5b6819dq065;
+# committed as reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json.
+# Prod's `mga` is not dev's (whisper-base instead of whisper:large-v3, renamed
+# nodes), so the two digests are expected to differ.
+KNOWN_MD5 = "866909a9315bce0e493db7ab1627749d"
+DEV_MD5 = "a074294237a829f98be4fb0c82925583"
 # An empty manual is `{"id": ..., "results": []}` — it carries no generated text,
 # so this digest does not depend on the prompt and survived the change above.
 EMPTY_MD5 = "1e724b1286bd1771ec6b3856b47d4daa"
@@ -547,6 +555,8 @@ def show(path: str) -> None:
               f" KNOWN_MD5 is for {REFERENCE_VIDEO} only")
     elif digest == KNOWN_MD5:
         print("  matches the reference run exactly (generation is deterministic)")
+    elif digest == DEV_MD5:
+        print("  matches the dev reference run of 2026-08-20 (20 steps), not prod's")
     elif digest == EMPTY_MD5:
         print("  this is the EMPTY result: generation ended inside the model's\n"
               "  reasoning block without producing an answer. Raise --max-new-tokens\n"
