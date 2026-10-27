@@ -36,7 +36,11 @@ def load_dotenv(path: str = ".env") -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        value = value.strip()
+        # A quoted value would otherwise keep its quotes: `"https://…"` is not a URL.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
 
 
 def api_base() -> str:
@@ -45,6 +49,17 @@ def api_base() -> str:
     if not endpoint:
         sys.exit("ATAI_API_ENDPOINT is not set (put it in .env)")
     return endpoint
+
+
+def files_root() -> str:
+    """Where the files API and run-output refs resolve.
+
+    The platform.* endpoints (`https://platform[.dev].u1.archetypeai.app/api`)
+    serve files at `<endpoint>/files`; the legacy api.* hosts served them at
+    `<endpoint>/v0.5/files`. /agents is at `<endpoint>/agents` on both.
+    """
+    endpoint = api_base()
+    return endpoint if endpoint.endswith("/api") else f"{endpoint}/v0.5"
 
 
 def require_key() -> str:
@@ -113,7 +128,7 @@ def guess_content_type(path: str) -> str:
 
 
 def upload_file(path: str, rename: str | None = None) -> dict:
-    """POST a file to /v0.5/files as multipart/form-data.
+    """POST a file to the files API as multipart/form-data.
 
     The body is streamed from disk: preamble + file handle + epilogue, with an
     explicit Content-Length. Videos here run to hundreds of megabytes, and
@@ -133,7 +148,7 @@ def upload_file(path: str, rename: str | None = None) -> dict:
 
     with open(path, "rb") as fh:
         body = _ChainedReader([preamble, fh, epilogue])
-        req = urllib.request.Request(f"{api_base()}/v0.5/files", data=body,
+        req = urllib.request.Request(f"{files_root()}/files", data=body,
                                      method="POST")
         req.add_header("Authorization", f"Bearer {os.environ['ATAI_API_KEY']}")
         req.add_header("Content-Type",
@@ -216,13 +231,13 @@ def fetch_ref(ref: str) -> bytes:
     """Download a /results ref, which comes in two shapes.
 
     A run output's ref is a *relative* platform path ("/files/download/<name>")
-    that resolves under /v0.5 and needs the bearer token. An absolute ref is a
+    that resolves under files_root() and needs the bearer token. An absolute ref is a
     presigned S3 URL carrying its own auth, and adding the header breaks it.
     """
     if ref.startswith("http"):
         with urllib.request.urlopen(ref, timeout=300) as resp:
             return resp.read()
-    return request("GET", f"{api_base()}/v0.5{ref}", raw=True)
+    return request("GET", f"{files_root()}{ref}", raw=True)
 
 
 def download_results(agent_id: str, out_path: str) -> str | None:

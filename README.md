@@ -1,8 +1,13 @@
 # Manual Generation Agent — End-to-End Example
 
 A realistic, end-to-end walkthrough of running the **Manual Generation Agent (MGA)**
-on the Archetype AI Platform (Dev): feed it a procedure video, get back an ordered,
+on the Archetype AI Platform: feed it a procedure video, get back an ordered,
 timestamped manual, and score it against ground truth.
+
+> **Now on prod.** The example targets `https://platform.u1.archetypeai.app/api`
+> and was re-run there on 2026-10-27: see [On prod (2026-10-27)](#on-prod-2026-10-27).
+> Everything else in this README was measured on **dev** between 2026-08-10 and
+> 2026-08-27, against dev's `mga` blueprint, which is not the one prod runs.
 
 The scenario: a 2:53 roadside tire-change video with **11 documented reference
 steps**. A developer wants a manual good enough that someone could follow it, and
@@ -10,7 +15,8 @@ wants to know how close the agent gets.
 
 MGA V1 is zero-shot. The design doc states there are no build-time optimization
 steps, and the platform agrees: the `mga` blueprint pins its own models
-(`newton-fusion:1.0` and `whisper:large-v3`), so unlike the
+(`newton-fusion-1-0` and `whisper-base` on prod; `newton-fusion:1.0` and
+`whisper:large-v3` on dev), so unlike the
 [RED](https://github.com/archetypeai/rare-event-detection-agent-example) and
 [OSM](https://github.com/archetypeai/operational-state-monitoring-agent-example)
 examples there is **no classifier to fit and no `artifacts` map to pass**. That
@@ -27,7 +33,7 @@ video ─► sample frames ─┐
 ## Quick start — try the agent in one command
 
 Nothing to build and nothing to fit — **no `atai_core`, no GPU, no AWS**. You do
-need two command-line tools and a dev API key:
+need two command-line tools and an API key:
 
 ```sh
 brew install yt-dlp ffmpeg     # or: apt install yt-dlp ffmpeg
@@ -46,10 +52,12 @@ surface much later as `FileNotFoundError: data/clips/tire_*.mp4`. The script now
 checks for both tools before it starts. (Already have the clip? Point `--video` at
 it and neither tool is needed.)
 
-**What you get:** a 20-step manual covering 14–138 s of the 173 s clip, each step
-carrying a start and end timestamp you can trace back to the video, plus a content digest
-that should match `a0742942…` exactly — generation is deterministic at
-temperature 0, so a matching digest means you reproduced the reference run.
+**What you get on prod:** a 16-step manual covering 14–138 s of the 173 s clip,
+each step carrying a start and end timestamp you can trace back to the video, plus a
+content digest that should match `866909a9…` exactly. Three prod runs on 2026-10-27
+returned the same manual (612–618 s each), so generation
+is deterministic on prod too — and the digest goes stale whenever the blueprint is republished.
+(On dev the same command gave 20 steps, `a0742942…`, on 2026-08-20.)
 
 The clip's first 14 s are a music intro and its last 35 s are Toyota branding, so
 14–138 s is the whole procedure, not a truncation. **A digest that differs does not
@@ -120,8 +128,53 @@ else, including the whole evaluation, works offline with no API key.
 | 1 Select a video | `ffprobe` for duration and an audio track; see the checks below | nothing |
 | 2 Fetch | `run_mga_example.py --download-only` | nothing (yt-dlp + ffmpeg) |
 | 3 Configure | `run_mga_example.py --dry-run` | nothing |
-| 4 Run | `run_mga_example.py` | dev API key |
+| 4 Run | `run_mga_example.py` | API key |
 | 5 Evaluate | `evaluate.py --compare reference/*.json` | nothing |
+
+## On prod (2026-10-27)
+
+Same command, same clip, same prompt, `max_frames` 64 and `max_new_tokens` 16384,
+against `https://platform.u1.archetypeai.app/api`:
+
+```sh
+python3 run_mga_example.py
+python3 evaluate.py --compare reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json \
+                              reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json
+```
+
+| | dev, 2026-08-20 | **prod, 2026-10-27** |
+|---|---|---|
+| blueprint | `blp_3e0hmp…` | **`blp_7vc935…`** |
+| transcriber | `whisper:large-v3` | **`whisper-base`** |
+| steps | 20 | **16** |
+| coverage | 14–138 s | 14–138 s |
+| ref steps found (any overlap) | 9/11 | **11/11** |
+| … at IoU ≥ 0.5 | 4/11 | **7/11** |
+| cautions as their own step | 2 | 1 |
+| content md5 | `a0742942…` | **`866909a9…`** |
+| wall time | ~15 min | **617 s** |
+
+Output: [`reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json`](reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json).
+Prod finds every reference step and localises more of them, in fewer steps. It is
+one clip, and the two columns differ in blueprint, transcriber and model build, so
+this says prod works at least as well here, not why.
+
+**Prod's `mga` is not dev's.** What changed, read from `GET /agents/blueprints/mga`:
+
+- The nodes are renamed (`fusion` → `generator`, `whisper` → `transcriber`) and
+  the transcriber is **`whisper-base`**, not `whisper:large-v3`. Dev's step
+  boundaries came from the transcript (see the
+  [narration ablation](#the-narration-ablation-2026-08-27)), so this is the change
+  most likely to move timestamps.
+- `max_new_tokens` defaults to **8192**, not 16384. The example sends 16384, so it
+  is unaffected; a bundle that sends nothing gets 8192, which is inside the range
+  that returned an EMPTY manual on dev. Not re-measured on prod.
+- `max_frames` is now validated: **1–64**, anything else is rejected when the
+  blueprint resolves. `size` is 224–2048 or `null` (source resolution).
+- A new value, `min_temporal_similarity_threshold` (default 0.0), collapses runs of
+  near-identical frames before the model sees them.
+- `prompt` still defaults to *"…with 10 steps or less."*, so **send one**.
+- The files API moved from `/v0.5/files` to `/files`.
 
 ## Evidence: what the configuration is worth
 
@@ -325,7 +378,7 @@ beside it shows a different action, with nothing to signal the mismatch.
 **Both manuals are committed, so you can compare them without a GPU** — they are the
 only two files in `reference/` that differ in exactly one input:
 
-- [`mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json`](reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json) — the narrated run. Also the `KNOWN_MD5` reference.
+- [`mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json`](reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json) — the narrated run on dev. `KNOWN_MD5` until 2026-10-27; `DEV_MD5` now.
 - [`mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json`](reference/mga-output-i2JWkDyg26A-20260827-SILENT-16steps.json) — the same footage with the audio track stripped.
 
 ```sh
@@ -409,8 +462,16 @@ models, so there is nothing to fit and nothing to upload.
 - `.env` in the repo root:
 
   ```
-  ATAI_API_KEY=<dev API key>
-  ATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app
+  ATAI_API_KEY=<API key>
+  ATAI_API_ENDPOINT=https://platform.u1.archetypeai.app/api
+  ```
+
+  The `platform.*` endpoints end in `/api` and serve files at `<endpoint>/files`.
+  The legacy `api.*` hosts (e.g. `https://api.dev.u1.archetypeai.app`) served them
+  at `<endpoint>/v0.5/files`; the clients pick the right one from the endpoint, so
+  either works. Dev's new endpoint is `https://platform.dev.u1.archetypeai.app/api`.
+
+  ```
   ```
 
 - **Python 3** — verified on 3.14. Every script here is **stdlib-only**: no
@@ -729,9 +790,10 @@ or advice as steps"* — which is untested.
 python3 run_mga_example.py
 ```
 
-Upload → create a bundle → run → stream `/logs` → download → print. **~15 minutes**:
-about 7.5 min of model download and load on *every* run (nothing is cached between
-runs), then roughly 2.5× realtime processing.
+Upload → create a bundle → run → stream `/logs` → download → print. **~10 minutes
+on prod**: 617 s on 2026-10-27, of which 5 min 4 s downloading newton-fusion,
+1 min 48 s loading it, and 3 min 13 s processing the 173 s clip. Nothing is cached
+between runs, so every run pays the load. (Dev took ~15 minutes.)
 **Run one at a time.** Dev looked like it serialised jobs — four submissions once
 produced ~800 s queue waits — but three concurrent runs on 2026-08-13 came up as
 three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
@@ -774,7 +836,7 @@ of them are explained in
 #    object and kills whichever run is still holding it.
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
   -F "file=@clip.mp4;filename=clip-20260813T154418Z-410f.mp4;type=video/mp4" \
-  "$ATAI_API_ENDPOINT/v0.5/files"
+  "$ATAI_API_ENDPOINT/files"          # legacy api.* hosts: $ATAI_API_ENDPOINT/v0.5/files
 
 # 2. bundle            (/bundles is PLURAL; no artifacts map for mga)
 #    SEND A PROMPT. Omit it and the blueprint's own instruction applies —
@@ -801,7 +863,7 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: applicat
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
   "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/logs?limit=500"
 
-# 5. results           (ref is relative, resolves under /v0.5, needs the token)
+# 5. results           (ref is relative, resolves under $ATAI_API_ENDPOINT, needs the token)
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
   "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/results"
 ```
@@ -1293,7 +1355,7 @@ checklist is done:
 |---|---|---|
 | 1 | Point the example at the active blueprint | ✅ both scripts default to the key `mga` |
 | 2 | Track new blueprint versions | ✅ solved by using the key rather than an id |
-| 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 20-step run, re-measured 2026-08-20 on `blp_3e0hmp…`. It went stale within a week last time; expect to redo this |
+| 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 16-step prod run, measured three times 2026-10-27 on `blp_7vc935…` (was the 20-step dev run of 2026-08-20). It went stale within a week last time; expect to redo this |
 | 4 | Revisit the `--max-new-tokens` default | ✅ 16384 — measured; 4096 returns an empty manual, above 16384 changes nothing |
 | 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12 — **PLDEV-1730** landed. Instruction rewritten 2026-08-20 after it degenerated on a second clip |
 | 6–7 | Re-frame the headline and Stage 3 | ✅ both defects fixed; the framing is now the recurring pattern |
@@ -1306,10 +1368,12 @@ needed a caller-supplied prompt the blueprint had stopped accepting. Then it was
 reproduced *on an unchanged prompt*, because the canonical blueprint had been
 republished under it; the same instruction now returns 21 steps over 0–111 s.
 
-It is currently `a074294237a829f98be4fb0c82925583` — 20 steps, 14–138 s, measured
-2026-08-20 on `blp_3e0hmpqfgc93wvncmr8m30eeny` with the current `DEFAULT_PROMPT`,
-and committed as `reference/mga-output-i2JWkDyg26A-20260820-AUDIO-20steps.json` so the
-check can be run offline. **A mismatch is more likely to mean the blueprint moved
+It is currently `866909a9315bce0e493db7ab1627749d` — 16 steps, 14–138 s, measured
+three times on **prod** on 2026-10-27 on `blp_7vc935235b964bw5b6819dq065` with the current
+`DEFAULT_PROMPT`, and committed as
+`reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json` so the check can be run
+offline. The dev digest before it, `a074294237a829f98be4fb0c82925583` (20 steps,
+2026-08-20, `blp_3e0hmp…`), is still recognised by `--show`. **A mismatch is more likely to mean the blueprint moved
 than that you did something wrong** — check `blueprint <id>` in the run's own
 output before assuming otherwise. `EMPTY_MD5` sits next to it so a run that came
 back empty is named rather than left as a mystery; an empty manual carries no
