@@ -4,8 +4,8 @@
 Single file, stdlib only — no pip install, no virtualenv. Copy this file plus a
 .env next to it and run it.
 
-    ATAI_API_KEY=<dev key>
-    ATAI_API_ENDPOINT=https://api.dev.u1.archetypeai.app
+    ATAI_API_KEY=<API key>
+    ATAI_API_ENDPOINT=https://platform.u1.archetypeai.app/api
 
     python3 run_mga_example.py --download     # fetch the video, then run
     python3 run_mga_example.py                # video already on disk
@@ -229,7 +229,11 @@ def load_dotenv(path: str = ".env") -> None:
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip())
+            v = v.strip()
+            # A quoted value would otherwise keep its quotes: `"https://…"` is not a URL.
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+            os.environ.setdefault(k.strip(), v)
 
 
 def env() -> tuple[str, str]:
@@ -241,6 +245,16 @@ def env() -> tuple[str, str]:
     if not endpoint:
         sys.exit("ATAI_API_ENDPOINT is not set (put it in .env)")
     return key, endpoint
+
+
+def files_root(endpoint: str) -> str:
+    """Where the files API and run-output refs resolve.
+
+    The platform.* endpoints (`https://platform[.dev].u1.archetypeai.app/api`)
+    serve files at `<endpoint>/files`; the legacy api.* hosts served them at
+    `<endpoint>/v0.5/files`. /agents is at `<endpoint>/agents` on both.
+    """
+    return endpoint if endpoint.endswith("/api") else f"{endpoint}/v0.5"
 
 
 def api(method: str, url: str, body=None, raw: bool = False):
@@ -351,7 +365,7 @@ def upload_name(path: str) -> str:
 
 
 def upload(path: str, name: str | None = None) -> str:
-    """POST the video to /v0.5/files as multipart/form-data.
+    """POST the video to the files API as multipart/form-data.
 
     The declared Content-Type matters: the files API enforces a MIME allowlist on
     what you declare, not on the bytes, so an .mp4 sent as text/csv is rejected.
@@ -368,7 +382,7 @@ def upload(path: str, name: str | None = None) -> str:
         open(path, "rb").read(),
         f"\r\n--{boundary}--\r\n".encode(),
     ])
-    req = urllib.request.Request(f"{endpoint}/v0.5/files", data=body, method="POST")
+    req = urllib.request.Request(f"{files_root(endpoint)}/files", data=body, method="POST")
     req.add_header("Authorization", f"Bearer {key}")
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     try:
@@ -470,10 +484,10 @@ def fetch_results(agent_id: str, out_path: str,
     if not ref:
         print("  results carried no download ref")
         return None
-    # A run output's ref is a RELATIVE platform path that resolves under /v0.5 and
+    # A run output's ref is a RELATIVE platform path that resolves under files_root() and
     # needs the bearer token; an absolute ref is presigned and must not get the
     # header. Run outputs do not expire, so this can be re-fetched later.
-    payload = api("GET", f"{endpoint}/v0.5{ref}", raw=True) if not ref.startswith("http") \
+    payload = api("GET", f"{files_root(endpoint)}{ref}", raw=True) if not ref.startswith("http") \
         else urllib.request.urlopen(ref, timeout=300).read()
     if canonical_id:
         payload = normalise_id(payload, canonical_id)

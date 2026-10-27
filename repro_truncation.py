@@ -172,7 +172,7 @@ def upload(path: str) -> str:
         b"Content-Type: video/mp4\r\n\r\n", open(path, "rb").read(),
         f"\r\n--{b}--\r\n".encode(),
     ])
-    req = urllib.request.Request(f"{ep}/v0.5/files", data=body, method="POST")
+    req = urllib.request.Request(f"{ep if ep.endswith('/api') else ep + '/v0.5'}/files", data=body, method="POST")
     req.add_header("Authorization", f"Bearer {key}")
     req.add_header("Content-Type", f"multipart/form-data; boundary={b}")
     with urllib.request.urlopen(req, timeout=900) as r:
@@ -284,7 +284,7 @@ def run_once(file_id: str, values: dict, label: str, out_path: str,
         print("  no results")
         return None
     ref = (results[0].get("data") or {}).get("ref")
-    payload = api("GET", f"{ep}/v0.5{ref}", raw=True)
+    payload = api("GET", f"{ep if ep.endswith('/api') else ep + '/v0.5'}{ref}", raw=True)
     open(out_path, "wb").write(payload)
     print(f"  saved {out_path}  ({len(payload)} B, md5 {hashlib.md5(payload).hexdigest()})")
     return out_path
