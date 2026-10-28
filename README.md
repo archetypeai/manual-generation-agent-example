@@ -301,24 +301,39 @@ Most holes at the start are intros the plain prompt leaves out, not lost steps. 
 two mid-video holes are not prompt problems, and answers are deterministic, so asking
 again returns the same. Only tire has a reference; the rest were judged by reading.
 
-**The videos are not in git** (`data/` is ignored; the thirteen are ~295 MB). The originals are in a local working copy of
-manual-gen-with-manual-generation-agent (`data/videos/`, also gitignored); ask for them,
-then check:
+### How long it took
 
-```
-5771f46d637314fdad86d6c4c934dbb5  data/clips/tire_i2JWkDyg26A.mp4
-4abee1733e2471c566575de932e56ffb  data/clips/tire_i2JWkDyg26A-silent.mp4
-729ff03b67a0fe29d2f58c82def810fa  data/clips/french-toast.mp4
-537df49594d8f65118eff6b180dcbb41  data/clips/make-a-latte.mp4
-a90760bce8a7ba24348bda8dbccfaa79  data/clips/jack-up-a-car.mp4
-80a4e966c48a6ce9808280d5c7252154  data/clips/mouse_assembly.mp4
-ea86f8ff5b9065619b7322f28084cbca  data/clips-more/rotate-tires.mp4
-0759d749e3714202f989ba2b585b9c1d  data/clips-more/check-engine-oil.mp4
-3f52d8a7137b3e1d3de9f2467a31b7fc  data/clips-more/jello-shots.mp4
-de8615898d4d1aac0cf6312eea14d066  data/clips-more/pickles.mp4
-2f9973b81a31554fac0256876ddd878f  data/clips-more/change-a-tire-long.mp4
-306097ccc4193e70e702b943418c52fd  data/clips-more/oil-change-long.mp4
-39207706ad30739077c801ce0e7da842  data/clips-more/floating-shelf-long.mp4
+| approach | where | wall clock | how it was spent |
+|---|---|---|---|
+| batch, tire only | prod | 612–618 s | one job per video, ~7 min of it model download + load (3 runs) |
+| batch, 13 videos | dev or prod | ~2.2 h (estimate) | 13 × ~10 min in turn; the three 10-minute videos are past batch's ~5-minute ceiling |
+| **serving, tire whole** | dev | **768 s** | 729 s load, then 2 answers: 28.5 s and 9.5 s |
+| **serving, 6 videos, 90 s chunks** (13) | dev | **792 s** | 667 s load, then 13 answers in 125 s |
+| **serving, 7 videos, 90 s chunks** (33) | dev | **1,006 s** | 677 s load, then 33 answers in 329 s, one 504 and retry included |
+| serving, 6 videos again, plain prompt on chunk 1 (13) | dev | 762 s | 677 s load, then 13 answers in 84 s |
+| serving, 6 opening chunks again | dev | 795 s | 760 s load, then 6 answers in 35 s |
+
+Once loaded, a video under 4 minutes costs **7–21 s** in 1–3 chunks (44 s for
+french-toast's first run), and a 10-minute video **48–57 s** in 8 chunks (145 s for
+floating-shelf-long, where one chunk timed out and was retried). All thirteen on one
+agent would take ~11–13 min of load plus ~6 min of answers, **~18 min against ~2.2 h**
+in batch. What the table hides: the load is most of every serving run and is paid
+again by every new agent (667–760 s across five), and the runs above are separate
+agents only because each ended with a cancel; `--keep` and `--agent` chain them on one
+load.
+
+**The videos are not in git** (`data/` is ignored; the thirteen are ~295 MB).
+`fetch_videos.py` downloads eleven from YouTube with yt-dlp, using the ids in
+manual-gen-with-manual-generation-agent's `scripts/fetch-sample-videos.mjs`, strips the
+tire clip's audio for the silent one, and checks each against the md5 of the copy
+measured here. On 2026-10-27 eleven came back byte-identical. jack-up-a-car did not:
+YouTube has since re-encoded its AV1 stream (441 kb/s, was 403) and added dubbed audio
+tracks, though the English audio is sample-identical. Its chunks, and so its answers,
+can differ slightly. `mouse_assembly` is an internal clip, not on YouTube: ask for it.
+
+```sh
+python3 fetch_videos.py --list    # ids, folders, expected md5
+python3 fetch_videos.py           # everything not already in data/
 ```
 
 The chunk answers are committed (`eval_serving_c90o15/chunks/`,
@@ -1436,6 +1451,7 @@ quite what was asked for.
 | `poll_probe.py` | Attaches to already-launched runs by agent id and compares outputs. |
 | `sweep_serve.py` | Agent serving on dev: one model load, then one query per clip or, with `--chunk`, per chunk. Re-encodes to fit the 2 MiB cap, resumes unanswered chunks, `--background` to detach. |
 | `merge_chunks.py` | Stitches chunk answers into one manual per clip (`dedupe` and `cut` rules), reports holes, scores tire. Offline. |
+| `fetch_videos.py` | Downloads the serving videos from YouTube into `data/clips/` and `data/clips-more/` and checks their md5. |
 | `background.py` | `--background`: relaunch under `nohup` + `caffeinate`, log to `logs/`; `kill` cleans up like Ctrl-C. |
 | `eval_serving*/` | Serving outputs: whole-clip tire, and the 90 s chunk answers with their merged manuals. |
 | `docs/` | The MGA design doc this example implements. |
