@@ -28,15 +28,18 @@ A batch run (run_mga_example.py) pays ~7 min of model download and load for
 every video. Serving runs the same `mga` bundle with {"mode": "serving"}: the
 agent loads once and answers POST /agents/instances/{id}/query per video.
 
-Limits today (dev and staging only):
+Limits today (agent serving is on dev only, as of 2026-10-28):
   - one GPU agent at a time on dev
   - the video goes inline (`"file_ids": ["base64:<mp4>"]`) and the whole body is
     capped at 2 MiB, so every clip is re-encoded to fit, into data/clips-serving/.
     MGA samples 64 frames at 224 px, so frame size and rate can drop a long way;
     the soundtrack must stay, since whisper's transcript is half the input
-  - each query has a 58 s budget; the first query to a fresh agent can 504
-    (PLDEV-2432) and is retried
-  - an agent with no query for 20 minutes is released, and a bad input can end it
+  - each query has a 58 s budget; a 504 is retried
+  - an agent with no query for 20 minutes is released
+  - a fresh agent can answer a chunk differently, even at temperature 0
+
+The load streams to /logs ("Still loading … after 4min0s") and is printed. A bad
+video fails only its own query, with a 400 (PLDEV-2480), and the sweep moves on.
 
 The agent is cancelled at the end, Ctrl-C and `kill` included, unless --keep.
 """
@@ -64,8 +67,8 @@ BODY_CAP = 2 * 1024 * 1024
 ENCODES = [(360, 15, 30, 32), (360, 8, 32, 24), (240, 5, 32, 24), (180, 4, 34, 16), (144, 2, 36, 16)]
 # A chunk tries the source's own frame size and rate first (None keeps it).
 CHUNK_ENCODES = [(None, None, 23, 64)] + ENCODES
-# A video with fewer frames than max_frames (64) can fail the agent's preprocessing,
-# and a graph failure ends the served agent (TVA on dev, 2026-10-26).
+# A tail chunk with fewer frames than max_frames (64) is mostly an end card. It also
+# used to end the served agent (TVA on dev, 2026-10-26; fixed by PLDEV-2480).
 MIN_CHUNK_FRAMES = 64
 # From manual-gen-with-manual-generation-agent (src/lib/prompts.ts), where it is
 # prepended to every chunk of a split video; here, to every chunk after the first.
@@ -219,6 +222,27 @@ def wait_running(agent: str, seen: set, timeout_s: int) -> None:
                     "cannot see. Try again later." if "no worker is free" in error else "")
             sys.exit(f"agent {agent} is {status}, not running" + (f": {error}" if error else "") + hint)
         time.sleep(10)
+
+
+def release(agent: str, bundle: str | None) -> str:
+    """Cancel the agent and, when this run made the bundle, delete both.
+
+    A bundle still referenced by a run cannot be deleted (409), so the agent goes
+    first, retried while its cancel lands.
+    """
+    base = api.agents_base()
+    api.request("POST", f"{base}/instances/{agent}/cancel", allow_status=True)
+    if not bundle:
+        return f"cancelled {agent}"
+    for _ in range(12):
+        code, _ = api.request("DELETE", f"{base}/instances/{agent}", raw=True, allow_status=True)
+        if code < 300 or code == 404:
+            break
+        time.sleep(5)
+    code, body = api.request("DELETE", f"{base}/bundles/{bundle}", raw=True, allow_status=True)
+    if code < 300:
+        return f"cancelled and deleted {agent}, deleted {bundle}"
+    return f"cancelled {agent}; {bundle} NOT deleted ({code}): {str(body)[:200]}"
 
 
 class AgentGone(Exception):
@@ -397,8 +421,8 @@ def main() -> None:
         return
 
     api.load_dotenv()
-    if ".dev." not in api.api_base() and "stag" not in api.api_base():
-        sys.exit(f"agent serving is on dev and staging only; ATAI_API_ENDPOINT is {api.api_base()}")
+    if ".dev." not in api.api_base():
+        sys.exit(f"agent serving is on dev only (2026-10-28); ATAI_API_ENDPOINT is {api.api_base()}")
     os.makedirs(os.path.dirname(output_path(args, "x")), exist_ok=True)
     log(f"{len(todo)} clip(s), {n_queries * args.repeat} queries")
 
@@ -458,10 +482,7 @@ def main() -> None:
         if args.keep:
             log(f"agent {agent} left running (--agent {agent}); released after 20 idle min")
         else:
-            api.request("POST", f"{api.agents_base()}/instances/{agent}/cancel", allow_status=True)
-            if bundle:
-                api.request("DELETE", f"{api.agents_base()}/bundles/{bundle}", raw=True, allow_status=True)
-            log(f"cancelled {agent}" + (f", deleted {bundle}" if bundle else ""))
+            log(release(agent, bundle))
         run_log["seconds"] = round(time.time() - t0)
         with open(os.path.join(args.out_dir, "serve-log.json"), "w") as f:
             json.dump(run_log, f, indent=2)
