@@ -17,7 +17,7 @@
         {
           "frame_end": 135.0,
           "frame_start": 0.0,
-          "instruction": "Introduce the project and the materials to be used.",
+          "instruction": "Introduce the project and materials for making a floating display shelf.",
           "step": 0,
           "timestamp_end": 9.0,
           "timestamp_start": 0.0
@@ -25,7 +25,7 @@
         {
           "frame_end": 270.0,
           "frame_start": 135.0,
-          "instruction": "Display the reclaimed pine boards that will be used for the shelf.",
+          "instruction": "Show the reclaimed pine boards that will be used for the shelf.",
           "step": 1,
           "timestamp_end": 18.0,
           "timestamp_start": 9.0
@@ -33,7 +33,7 @@
         {
           "frame_end": 405.0,
           "frame_start": 270.0,
-          "instruction": "Rip the boards to the desired width using a table saw.",
+          "instruction": "Cut the boards to size using a table saw.",
           "step": 2,
           "timestamp_end": 27.0,
           "timestamp_start": 18.0
@@ -41,26 +41,26 @@
         {
           "frame_end": 690.0,
           "frame_start": 405.0,
-          "instruction": "Cut one end of each board square and measure for the required length.",
+          "instruction": "Rip the boards to the desired width on the table saw.",
           "step": 3,
           "timestamp_end": 46.0,
           "timestamp_start": 27.0
         },
         {
-          "frame_end": 900.0,
+          "frame_end": 885.0,
           "frame_start": 690.0,
-          "instruction": "Cut the boards to the final length using a table saw.",
+          "instruction": "Measure and mark the length for each board after cutting them square.",
           "step": 4,
-          "timestamp_end": 60.0,
+          "timestamp_end": 59.0,
           "timestamp_start": 46.0
         },
         {
           "frame_end": 1155.0,
-          "frame_start": 900.0,
-          "instruction": "Cut grooves across the boards approximately 5 inches in from the ends.",
+          "frame_start": 885.0,
+          "instruction": "Cut grooves across the boards approximately 5 inches from each end.",
           "step": 5,
           "timestamp_end": 77.0,
-          "timestamp_start": 60.0
+          "timestamp_start": 59.0
         },
         {
           "frame_end": 1335.0,
@@ -539,7 +539,7 @@
         {
           "frame_end": 224.0,
           "frame_start": 168.0,
-          "instruction": "Tap the dowel flush with the surface using a rubber mallet.",
+          "instruction": "Tap the dowel flush with the surface using a mallet.",
           "step": 4,
           "timestamp_end": 28.0,
           "timestamp_start": 21.0
@@ -547,7 +547,7 @@
         {
           "frame_end": 336.0,
           "frame_start": 224.0,
-          "instruction": "Repeat the gluing and insertion process for the second dowel on the bracket base.",
+          "instruction": "Repeat the gluing and insertion process for the second dowel.",
           "step": 5,
           "timestamp_end": 42.0,
           "timestamp_start": 28.0
@@ -555,7 +555,7 @@
         {
           "frame_end": 424.0,
           "frame_start": 336.0,
-          "instruction": "Cut the remaining stock into strips about a quarter inch thick using a table saw.",
+          "instruction": "Cut the remaining stock to strips about a quarter inch thick using a table saw.",
           "step": 6,
           "timestamp_end": 53.0,
           "timestamp_start": 42.0
@@ -563,34 +563,18 @@
         {
           "frame_end": 480.0,
           "frame_start": 424.0,
-          "instruction": "Apply glue to the edge of the wooden panel.",
+          "instruction": "Apply glue to the edge of the wooden piece.",
           "step": 7,
           "timestamp_end": 60.0,
           "timestamp_start": 53.0
         },
         {
-          "frame_end": 560.0,
+          "frame_end": 496.0,
           "frame_start": 480.0,
-          "instruction": "Attach the cut strip to the glued edge of the panel.",
+          "instruction": "Attach the cut strip to the glued edge.",
           "step": 8,
-          "timestamp_end": 70.0,
+          "timestamp_end": 62.0,
           "timestamp_start": 60.0
-        },
-        {
-          "frame_end": 640.0,
-          "frame_start": 560.0,
-          "instruction": "Clamp the strip securely to the panel to ensure a strong bond.",
-          "step": 9,
-          "timestamp_end": 80.0,
-          "timestamp_start": 70.0
-        },
-        {
-          "frame_end": 704.0,
-          "frame_start": 640.0,
-          "instruction": "Wipe away any excess glue that squeezes out from the joint.",
-          "step": 10,
-          "timestamp_end": 88.0,
-          "timestamp_start": 80.0
         }
       ]
     },

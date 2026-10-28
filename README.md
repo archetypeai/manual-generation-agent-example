@@ -9,7 +9,8 @@ timestamped manual, and score it against ground truth.
 > Everything else in this README was measured on **dev** between 2026-08-10 and
 > 2026-08-27, against dev's `mga` blueprint, which is not the one prod runs, except
 > [Serving on dev](#serving-on-dev-load-once-one-query-per-clip-or-chunk-2026-10-27)
-> (2026-10-27): one model load for many videos, and 90 s chunks for videos up to 10 minutes.
+> (2026-10-27 and -28, **dev only**: agent serving is not on prod as of 2026-10-28): one
+> model load for many videos, and 90 s chunks for videos up to 10 minutes.
 
 The scenario: a 2:53 roadside tire-change video with **11 documented reference
 steps**. A developer wants a manual good enough that someone could follow it, and
@@ -192,26 +193,47 @@ python3 merge_chunks.py eval_serving_more_c90o15
 A batch run pays the model download and load on **every** video: 617 s for the tire
 clip on prod, ~7 min of it before the first frame. **Agent serving** runs the same
 `mga` bundle with `{"mode": "serving"}`: the agent loads once, then answers
-`POST /agents/instances/{id}/query` per video in seconds. Dev and staging only, for
-now, with today's limits:
+`POST /agents/instances/{id}/query` per video in seconds.
+
+> **Agent serving is available on dev only, as of 2026-10-28.** Not on prod or
+> staging yet: the batch run above is what prod offers. Everything in this section was
+> measured on dev.
+
+Today's limits:
 
 - **One GPU agent at a time on dev.** A second agent fails within a minute with *"no
   worker is free"*, so `sweep_serve.py` cancels its agent on exit, `kill` and Ctrl-C
   included, unless `--keep`. Reuse a kept one with `--agent agt_…`: no load at all.
-- **The load is ~11–13 minutes, once.** Agents took 667–760 s to reach `running`.
-  The one whose logs could be read (14:01, 2026-10-27) downloaded nothing (*"Using
-  locally available newton-fusion-1-0 model"*) and spent **11 min 48 s loading it**,
-  against 5 min download + 1 min 48 s load in batch. `/logs` answers `503 … logs could
-  not be read` while a serving agent loads and is empty once it is cancelled, so the
-  wait is usually silent.
+- **The load is ~11–13 minutes, once, and `/logs` shows it.** Agents took 664–760 s to
+  reach `running` (nine agents, 2026-10-27 and -28; one took 1,696 s while dev was
+  unstable). None downloaded anything (*"Using locally available newton-fusion-1-0
+  model"*): loading took **10 min 48 s – 12 min 7 s**, against 5 min download + 1 min
+  48 s load in batch. Since 2026-10-28 `/logs` streams the load as it happens
+  (*"Still loading newton-fusion-1-0 model after 4min0s"*, once a minute), then the
+  warm-up and whisper's load, a few seconds together. `sweep_serve.py` prints it.
+  The log is gone once the agent is cancelled.
 - **The video goes inline and the request is capped at 2 MiB**, about 1.57 MB of video.
   `sweep_serve.py` re-encodes each clip or chunk into `data/clips-serving/` (gitignored),
   best quality first, until the request fits. Frames are resized to 224 px for the
   model anyway, so resolution matters less than it looks; frame rate and audio bitrate
   are what it gives up.
 - **Each query has a 58 s budget.** Most queries took 3–14 s, a few 20–28 s (the
-  whole tire clip's first, 28.5 s). One chunk timed out (504) and answered on the retry in 27.9 s.
+  whole tire clip's first, 28.5 s). The first query to a new agent no longer times out:
+  the agent warms its models up before it reports `running` (PLDEV-2432). Over
+  2026-10-27 and -28, two of ~150 chunk queries still timed out (504), both
+  floating-shelf-long, and both answered on the retry (27.9 s and 18.2 s).
   `sweep_serve.py` retries 5xx three times.
+- **A bad video fails only its own query.** An audio-only mp4 gets `400 … probe failed:
+  no video stream`, random bytes `400 … decode failed`, and the agent answers the next
+  query (PLDEV-2480, checked 2026-10-28). Before, one bad input ended the agent and the
+  next query paid a new load. A 35-frame clip, which used to be such an input, is now
+  answered.
+- **A fresh agent can answer differently.** Two queries to one agent gave identical
+  steps, and a rerun on 2026-10-28 reproduced all six `data/clips` videos byte for byte.
+  But four of the seven `data/clips-more` videos came back different on a fresh agent,
+  at temperature 0: mostly rewording, but two opening chunks changed their step count
+  (change-a-tire-long 3 → 12, jello-shots 8 → 5). Read the step counts below as one
+  run's, not as fixed.
 - **The steps are in `response.data`**, not `{"id", "results"}`. `sweep_serve.py` wraps
   them so `evaluate.py` and `merge_chunks.py` read serving and batch alike.
 
@@ -236,7 +258,9 @@ part of your body under the vehicle"*), which costs it IoU.
 re-encoding each with an accurate seek (`-c copy` cuts on keyframes and drifted 7.6 s).
 A tail chunk that adds less new footage than the overlap, or has under 64 frames, joins
 the chunk before it: on its own it is an end card, and the model describes it as steps
-(*"Press the 'Enter' key."* eleven times on jack-up-a-car's 20 s tail).
+(*"Press the 'Enter' key."* eleven times on jack-up-a-car's 20 s tail). Under 64 frames
+also used to end the agent (TVA, 2026-10-26); it no longer does, but the short tail
+would still be an end card.
 
 **The prompt.** Every chunk after the first gets `CHUNK_PREAMBLE` before the prompt,
 taken from manual-gen-with-manual-generation-agent's `prompts.ts`: told each chunk is a
@@ -250,11 +274,11 @@ leaves 75 s of the manual empty. Measured on 11 opening chunks, both ways:
 |---|---|---|
 | french-toast, make-a-latte | every step at 0.0–0.0 s, dropped | real steps from 0 s and 26 s |
 | pickles | 30 steps, 22 of them *"View the sugar"*, *"View the ladle"*… | 4 real steps from 76 s |
-| change-a-tire-long | 16 steps of *"State that…"* narration | 3 real steps |
+| change-a-tire-long | 16 steps of *"State that…"* narration | 3 real steps (12 from 0 s on 2026-10-28, starting *"Watch the intro sequence."*) |
 | jack-up-a-car | 10 steps, 0–89 s | 7 steps from 30 s |
 | check-engine-oil | 19, incl. *"Watch the Howcast logo"* | 11 real steps from 22 s |
 | tire | 2/11 at IoU ≥ 0.5 | **5/11** |
-| jello-shots | 5 steps from 63 s | 8 from 0 s, 3 of them intro |
+| jello-shots | 5 steps from 63 s | 8 from 0 s, 3 of them intro (5 from 63 s on 2026-10-28) |
 | floating-shelf-long, oil-change-long | — | about the same |
 | **tire-silent** (no audio) | 9 steps, 0–81 s | **15 invented steps** at an even 8 s, to 120 s in a 90 s chunk |
 
@@ -276,10 +300,11 @@ the plain prompt. One example is not enough for a rule, so the plain prompt stay
    81–83 s and 81–84 s).
 5. Holes over 20 s are reported, including one at the start.
 
-### Thirteen videos, 2026-10-27
+### Thirteen videos, 2026-10-28
 
-Two runs, 13 and 33 queries, then the opening chunks again with the plain prompt
-(13 and 6). Each run was **762–1,006 s, of which 667–760 s was the load**:
+Rerun on 2026-10-28 with the plain prompt on every opening chunk: two runs, 13 and 33
+queries, each with its own agent, **747 s and 870 s, of which 666 s and 665 s was the
+load**. The committed answers are this run's:
 
 | video | length | chunks | steps (`cut`) | holes | notes |
 |---|---|---|---|---|---|
@@ -291,15 +316,15 @@ Two runs, 13 and 33 queries, then the opening chunks again with the plain prompt
 | mouse_assembly | 80 s | 1 | 12 | — | sent whole, plain prompt |
 | rotate-tires | 102 s | 1 | 10 | 0–22 s | intro |
 | check-engine-oil | 128 s | 2 | 17 | 0–22 s | intro |
-| jello-shots | 209 s | 3 | 27 | — | |
+| jello-shots | 209 s | 3 | 24 | 0–63 s | intro (27 steps, no hole, on 2026-10-27) |
 | pickles | 243 s | 3 | 29 | 0–76 s | intro and ingredient list |
-| change-a-tire-long | 563 s | 8 | 58 | 0–46, 51–75, 121–150 s | 75–165 s chunk describes only to 121 s |
+| change-a-tire-long | 563 s | 8 | 64 | 121–150 s | 75–165 s chunk describes only to 121 s; opens on the intro (58 steps, holes at 0–46 and 51–75 s, on 2026-10-27) |
 | oil-change-long | 580 s | 8 | 56 | — | |
-| floating-shelf-long | 589 s | 8 | 56 | 227–309 s | 225–315 s chunk: *"Cut a piece of wood using a table saw."* ×17, dropped |
+| floating-shelf-long | 589 s | 8 | 55 | 227–309, 437–459 s | 225–315 s chunk: *"Cut a piece of wood using a table saw."* ×17, dropped, both days |
 
 Most holes at the start are intros the plain prompt leaves out, not lost steps. The
-two mid-video holes are not prompt problems, and answers are deterministic, so asking
-again returns the same. Only tire has a reference; the rest were judged by reading.
+225–315 s chunk of floating-shelf-long looped on both days, so asking again does not
+fill that hole. Only tire has a reference; the rest were judged by reading.
 
 ### How long it took
 
@@ -312,13 +337,15 @@ again returns the same. Only tire has a reference; the rest were judged by readi
 | **serving, 7 videos, 90 s chunks** (33) | dev | **1,006 s** | 677 s load, then 33 answers in 329 s, one 504 and retry included |
 | serving, 6 videos again, plain prompt on chunk 1 (13) | dev | 762 s | 677 s load, then 13 answers in 84 s |
 | serving, 6 opening chunks again | dev | 795 s | 760 s load, then 6 answers in 35 s |
+| **serving, 6 videos, rerun 2026-10-28** (13) | dev | **747 s** | 666 s load, then 13 answers in 81 s |
+| **serving, 7 videos, rerun 2026-10-28** (33) | dev | **870 s** | 665 s load, then 33 answers in 205 s, no retries |
 
 Once loaded, a video under 4 minutes costs **7–21 s** in 1–3 chunks (44 s for
-french-toast's first run), and a 10-minute video **48–57 s** in 8 chunks (145 s for
+french-toast's first run), and a 10-minute video **45–57 s** in 8 chunks (145 s for
 floating-shelf-long, where one chunk timed out and was retried). All thirteen on one
-agent would take ~11–13 min of load plus ~6 min of answers, **~18 min against ~2.2 h**
-in batch. What the table hides: the load is most of every serving run and is paid
-again by every new agent (667–760 s across five), and the runs above are separate
+agent would take ~11–13 min of load plus ~5 min of answers, **~16–18 min against
+~2.2 h** in batch. What the table hides: the load is most of every serving run and is
+paid again by every new agent (664–760 s across nine), and the runs above are separate
 agents only because each ended with a cancel; `--keep` and `--agent` chain them on one
 load.
 

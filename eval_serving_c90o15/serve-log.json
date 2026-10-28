@@ -1,6 +1,6 @@
 {
-  "agent": "agt_06mxywh1h09vyajcg4bc5qtdj7",
-  "bundle": "bnd_4vnfm9vpqt8r4rx8h7ftznrsd0",
+  "agent": "agt_3cj14xe93p9p3rxw2xqbsbz245",
+  "bundle": "bnd_1mggsx1xhz98qsjgryejqh1g6t",
   "clips": [
     {
       "clip": "french-toast",
@@ -10,9 +10,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 5.7,
+              "seconds": 5.0,
               "tries": 1,
-              "server_ms": 5375.433,
+              "server_ms": 4421.037,
               "steps": 8
             }
           ]
@@ -22,9 +22,9 @@
           "encode": "360p 15 fps crf30 aac 32k mono",
           "queries": [
             {
-              "seconds": 5.2,
+              "seconds": 4.9,
               "tries": 1,
-              "server_ms": 4869.411,
+              "server_ms": 4100.221,
               "steps": 7
             }
           ]
@@ -39,9 +39,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 5.8,
+              "seconds": 4.8,
               "tries": 1,
-              "server_ms": 5536.558,
+              "server_ms": 4370.51,
               "steps": 7
             }
           ]
@@ -51,9 +51,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 8.0,
+              "seconds": 8.8,
               "tries": 1,
-              "server_ms": 7688.292,
+              "server_ms": 6733.736,
               "steps": 12
             }
           ]
@@ -63,9 +63,9 @@
           "encode": "360p 15 fps crf30 aac 32k mono",
           "queries": [
             {
-              "seconds": 3.3,
+              "seconds": 3.0,
               "tries": 1,
-              "server_ms": 3013.571,
+              "server_ms": 2462.505,
               "steps": 3
             }
           ]
@@ -80,9 +80,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 5.4,
+              "seconds": 5.0,
               "tries": 1,
-              "server_ms": 5085.885,
+              "server_ms": 4049.355,
               "steps": 7
             }
           ]
@@ -92,9 +92,9 @@
           "encode": "240p 5 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 11.3,
+              "seconds": 10.7,
               "tries": 1,
-              "server_ms": 10964.681,
+              "server_ms": 9944.34,
               "steps": 20
             }
           ]
@@ -104,9 +104,9 @@
           "encode": "360p 15 fps crf30 aac 32k mono",
           "queries": [
             {
-              "seconds": 4.8,
+              "seconds": 4.5,
               "tries": 1,
-              "server_ms": 4492.722,
+              "server_ms": 4075.762,
               "steps": 7
             }
           ]
@@ -121,9 +121,9 @@
           "encode": "360p 8 fps crf32 no audio",
           "queries": [
             {
-              "seconds": 6.4,
+              "seconds": 6.5,
               "tries": 1,
-              "server_ms": 6002.603,
+              "server_ms": 5918.49,
               "steps": 12
             }
           ]
@@ -140,7 +140,7 @@
             {
               "seconds": 7.6,
               "tries": 1,
-              "server_ms": 7301.094,
+              "server_ms": 7033.787,
               "steps": 15
             }
           ]
@@ -150,9 +150,9 @@
           "encode": "360p 15 fps crf30 no audio",
           "queries": [
             {
-              "seconds": 6.4,
+              "seconds": 6.5,
               "tries": 1,
-              "server_ms": 6052.52,
+              "server_ms": 5989.065,
               "steps": 12
             }
           ]
@@ -167,9 +167,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 6.9,
+              "seconds": 5.9,
               "tries": 1,
-              "server_ms": 6345.86,
+              "server_ms": 5448.573,
               "steps": 10
             }
           ]
@@ -179,9 +179,9 @@
           "encode": "360p 8 fps crf32 aac 24k mono",
           "queries": [
             {
-              "seconds": 6.6,
+              "seconds": 6.2,
               "tries": 1,
-              "server_ms": 6315.147,
+              "server_ms": 5665.099,
               "steps": 10
             }
           ]
@@ -189,5 +189,5 @@
       ]
     }
   ],
-  "seconds": 762
+  "seconds": 747
 }

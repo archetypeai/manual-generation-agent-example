@@ -15,68 +15,44 @@
       "query": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
       "rows": [
         {
-          "frame_end": 150.0,
-          "frame_start": 0.0,
-          "instruction": "Watch the intro sequence with the title 'ANYTHING TO MAKE' and a request to subscribe.",
-          "step": 0,
-          "timestamp_end": 10.0,
-          "timestamp_start": 0.0
-        },
-        {
-          "frame_end": 435.0,
-          "frame_start": 150.0,
-          "instruction": "Read the background information about the Irish flag and the layered Jello shot.",
-          "step": 1,
-          "timestamp_end": 29.0,
-          "timestamp_start": 10.0
-        },
-        {
-          "frame_end": 900.0,
-          "frame_start": 435.0,
-          "instruction": "Review the list of ingredients including lime gelatin, orange gelatin, sweetened condensed milk, unflavored gelatin, water, Irish whiskey, whipped cream, and green sanding sugar.",
-          "step": 2,
-          "timestamp_end": 60.0,
-          "timestamp_start": 29.0
-        },
-        {
           "frame_end": 990.0,
-          "frame_start": 900.0,
-          "instruction": "Bring 1 cup of water to a boil on the stove top in a saucepan.",
-          "step": 3,
+          "frame_start": 945.0,
+          "instruction": "Bring one cup of water to a boil on the stove top in a saucepan.",
+          "step": 0,
           "timestamp_end": 66.0,
-          "timestamp_start": 60.0
+          "timestamp_start": 63.0
         },
         {
           "frame_end": 1095.0,
-          "frame_start": 990.0,
+          "frame_start": 1020.0,
           "instruction": "Remove the water from the heat and stir in the lime gelatin plus 2 envelopes of plain gelatin.",
-          "step": 4,
+          "step": 1,
           "timestamp_end": 73.0,
-          "timestamp_start": 66.0
+          "timestamp_start": 68.0
         },
         {
-          "frame_end": 1200.0,
-          "frame_start": 1095.0,
+          "frame_end": 1185.0,
+          "frame_start": 1125.0,
           "instruction": "Add 1/4 cup of cold water and 3/4 cup Irish whiskey to the mixture.",
-          "step": 5,
-          "timestamp_end": 80.0,
-          "timestamp_start": 73.0
+          "step": 2,
+          "timestamp_end": 79.0,
+          "timestamp_start": 75.0
         },
         {
-          "frame_end": 1260.0,
-          "frame_start": 1200.0,
+          "frame_end": 1245.0,
+          "frame_start": 1215.0,
           "instruction": "Whisk the ingredients until they're well combined.",
-          "step": 6,
-          "timestamp_end": 84.0,
-          "timestamp_start": 80.0
+          "step": 3,
+          "timestamp_end": 83.0,
+          "timestamp_start": 81.0
         },
         {
-          "frame_end": 1335.0,
-          "frame_start": 1260.0,
+          "frame_end": 1320.0,
+          "frame_start": 1275.0,
           "instruction": "Pour the green gelatin into each plastic shot glass, filling each glass 1/3 full.",
-          "step": 7,
-          "timestamp_end": 89.0,
-          "timestamp_start": 84.0
+          "step": 4,
+          "timestamp_end": 88.0,
+          "timestamp_start": 85.0
         }
       ]
     },

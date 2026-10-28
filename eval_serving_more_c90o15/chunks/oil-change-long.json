@@ -239,7 +239,7 @@
         {
           "frame_end": 35.0,
           "frame_start": 0.0,
-          "instruction": "Position the new oil filter onto the mounting point by hand.",
+          "instruction": "Position the new oil filter onto the engine mounting point.",
           "step": 0,
           "timestamp_end": 7.0,
           "timestamp_start": 0.0
@@ -247,7 +247,7 @@
         {
           "frame_end": 80.0,
           "frame_start": 35.0,
-          "instruction": "Turn the filter by hand to begin threading it onto the engine.",
+          "instruction": "Hand-tighten the new oil filter by turning it clockwise.",
           "step": 1,
           "timestamp_end": 16.0,
           "timestamp_start": 7.0
@@ -255,7 +255,7 @@
         {
           "frame_end": 105.0,
           "frame_start": 80.0,
-          "instruction": "Stop turning the filter to allow residual oil to drain from the gasket area.",
+          "instruction": "Begin unscrewing the old oil filter by turning it counter-clockwise.",
           "step": 2,
           "timestamp_end": 21.0,
           "timestamp_start": 16.0
@@ -263,7 +263,7 @@
         {
           "frame_end": 165.0,
           "frame_start": 105.0,
-          "instruction": "Loosen the filter slightly to let the remaining oil drip off.",
+          "instruction": "Loosen the old filter enough to allow residual oil to drip off into the drain pan.",
           "step": 3,
           "timestamp_end": 33.0,
           "timestamp_start": 21.0
@@ -271,7 +271,7 @@
         {
           "frame_end": 225.0,
           "frame_start": 165.0,
-          "instruction": "Wait for the oil to stop dripping from the side of the filter.",
+          "instruction": "Wait for the oil to stop draining from the side of the filter.",
           "step": 4,
           "timestamp_end": 45.0,
           "timestamp_start": 33.0
@@ -279,7 +279,7 @@
         {
           "frame_end": 255.0,
           "frame_start": 225.0,
-          "instruction": "Grab a rag to catch the oil from the filter.",
+          "instruction": "Grab a rag to catch the remaining oil.",
           "step": 5,
           "timestamp_end": 51.0,
           "timestamp_start": 45.0
@@ -287,7 +287,7 @@
         {
           "frame_end": 300.0,
           "frame_start": 255.0,
-          "instruction": "Finish spinning the filter off by hand while holding it with the rag.",
+          "instruction": "Finish unscrewing the old filter and tilt it to dump the oil into the drain pan.",
           "step": 6,
           "timestamp_end": 60.0,
           "timestamp_start": 51.0
@@ -295,7 +295,7 @@
         {
           "frame_end": 335.0,
           "frame_start": 300.0,
-          "instruction": "Pour the oil from the old filter into a waste container.",
+          "instruction": "Place the old oil filter into the oil drain bucket.",
           "step": 7,
           "timestamp_end": 67.0,
           "timestamp_start": 60.0
@@ -303,7 +303,7 @@
         {
           "frame_end": 375.0,
           "frame_start": 335.0,
-          "instruction": "Place the old oil filter on a rag to the side.",
+          "instruction": "Set the new oil filter aside on a rag.",
           "step": 8,
           "timestamp_end": 75.0,
           "timestamp_start": 67.0
@@ -311,7 +311,7 @@
         {
           "frame_end": 405.0,
           "frame_start": 375.0,
-          "instruction": "Clean your hands before handling the new filter.",
+          "instruction": "Wipe hands off with a rag.",
           "step": 9,
           "timestamp_end": 81.0,
           "timestamp_start": 75.0
@@ -319,7 +319,7 @@
         {
           "frame_end": 440.0,
           "frame_start": 405.0,
-          "instruction": "Take the new oil filter out of the box to prepare for installation.",
+          "instruction": "Pick up the new oil filter to install it.",
           "step": 10,
           "timestamp_end": 88.0,
           "timestamp_start": 81.0
