@@ -1,0 +1,109 @@
+{
+  "agent": "agt_33n0rberag9k5vkeagf8gs51p2",
+  "bundle": "bnd_573spdtjaw8nmt24tnpa28y6bx",
+  "clips": [
+    {
+      "clip": "change-a-tire-long",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "240p 5 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 3.9,
+              "tries": 1,
+              "server_ms": 3579.321,
+              "steps": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "check-engine-oil",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 7.8,
+              "tries": 1,
+              "server_ms": 7480.208,
+              "steps": 11
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "floating-shelf-long",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 15 fps crf30 aac 32k mono",
+          "queries": [
+            {
+              "seconds": 5.4,
+              "tries": 1,
+              "server_ms": 5059.188,
+              "steps": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "jello-shots",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 15 fps crf30 aac 32k mono",
+          "queries": [
+            {
+              "seconds": 6.5,
+              "tries": 1,
+              "server_ms": 6164.165,
+              "steps": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "oil-change-long",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "240p 5 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 6.1,
+              "tries": 1,
+              "server_ms": 5819.004,
+              "steps": 6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "pickles",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 4.5,
+              "tries": 1,
+              "server_ms": 4133.863,
+              "steps": 4
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "seconds": 795
+}

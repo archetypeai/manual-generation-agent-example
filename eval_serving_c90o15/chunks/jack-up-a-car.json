@@ -1,0 +1,216 @@
+{
+  "clip": "jack-up-a-car",
+  "source": "data/clips/jack-up-a-car.mp4",
+  "fps": 29.97002997002997,
+  "duration": 245.6439,
+  "seconds": 90.0,
+  "overlap": 15.0,
+  "chunks": [
+    {
+      "file": "data/clips-serving/jack-up-a-car/c90o15/00.mp4",
+      "offset": 0.0,
+      "duration": 90.0,
+      "encode": "360p 8 fps crf32 aac 24k mono",
+      "bytes": 1216746,
+      "query": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 264.0,
+          "frame_start": 240.0,
+          "instruction": "Ensure the car is parked on level ground.",
+          "step": 0,
+          "timestamp_end": 33.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 296.0,
+          "frame_start": 264.0,
+          "instruction": "Apply the parking brake.",
+          "step": 1,
+          "timestamp_end": 37.0,
+          "timestamp_start": 33.0
+        },
+        {
+          "frame_end": 336.0,
+          "frame_start": 296.0,
+          "instruction": "Place wheel chocks against the tires to prevent the car from rolling.",
+          "step": 2,
+          "timestamp_end": 42.0,
+          "timestamp_start": 37.0
+        },
+        {
+          "frame_end": 456.0,
+          "frame_start": 336.0,
+          "instruction": "Locate the vehicle's designated jacking points, typically found behind the front wheels and in front of the rear wheels.",
+          "step": 3,
+          "timestamp_end": 57.0,
+          "timestamp_start": 42.0
+        },
+        {
+          "frame_end": 536.0,
+          "frame_start": 456.0,
+          "instruction": "Position a floor jack under the front jacking point on one side of the car.",
+          "step": 4,
+          "timestamp_end": 67.0,
+          "timestamp_start": 57.0
+        },
+        {
+          "frame_end": 600.0,
+          "frame_start": 536.0,
+          "instruction": "Raise the car slightly and place a jack stand under the jacking point on that side.",
+          "step": 5,
+          "timestamp_end": 75.0,
+          "timestamp_start": 67.0
+        },
+        {
+          "frame_end": 656.0,
+          "frame_start": 600.0,
+          "instruction": "Lower the car onto the jack stand and repeat the process for the other side to secure the front of the vehicle.",
+          "step": 6,
+          "timestamp_end": 82.0,
+          "timestamp_start": 75.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/jack-up-a-car/c90o15/01.mp4",
+      "offset": 75.0,
+      "duration": 90.0,
+      "encode": "360p 8 fps crf32 aac 24k mono",
+      "bytes": 1416118,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 56.0,
+          "frame_start": 0.0,
+          "instruction": "Place jack stands underneath the front jacking points on both sides of the car.",
+          "step": 0,
+          "timestamp_end": 7.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 144.0,
+          "frame_start": 56.0,
+          "instruction": "Lower the car down onto the front jack stands, starting at the lowest setting to maintain access to the rear.",
+          "step": 1,
+          "timestamp_end": 18.0,
+          "timestamp_start": 7.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 144.0,
+          "instruction": "Bring a floor jack to the rear of the car and position it under the rear jacking point.",
+          "step": 2,
+          "timestamp_end": 30.0,
+          "timestamp_start": 18.0
+        },
+        {
+          "frame_end": 272.0,
+          "frame_start": 240.0,
+          "instruction": "Place a shop rag on top of the floor jack to protect the differential casing.",
+          "step": 3,
+          "timestamp_end": 34.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 312.0,
+          "frame_start": 272.0,
+          "instruction": "Lift the rear of the car and place jack stands underneath the rear jacking points.",
+          "step": 4,
+          "timestamp_end": 39.0,
+          "timestamp_start": 34.0
+        },
+        {
+          "frame_end": 344.0,
+          "frame_start": 312.0,
+          "instruction": "Lower the car down onto the rear jack stands.",
+          "step": 5,
+          "timestamp_end": 43.0,
+          "timestamp_start": 39.0
+        },
+        {
+          "frame_end": 400.0,
+          "frame_start": 344.0,
+          "instruction": "Adjust the jack stands to ensure the car is level, lifting the front or rear incrementally if needed.",
+          "step": 6,
+          "timestamp_end": 50.0,
+          "timestamp_start": 43.0
+        },
+        {
+          "frame_end": 432.0,
+          "frame_start": 400.0,
+          "instruction": "Ensure the car is stable and the jack stands are not tipping over.",
+          "step": 7,
+          "timestamp_end": 54.0,
+          "timestamp_start": 50.0
+        },
+        {
+          "frame_end": 480.0,
+          "frame_start": 432.0,
+          "instruction": "Give the car a shake to verify it is safe to get underneath.",
+          "step": 8,
+          "timestamp_end": 60.0,
+          "timestamp_start": 54.0
+        },
+        {
+          "frame_end": 552.0,
+          "frame_start": 480.0,
+          "instruction": "Place wood blocks underneath each of the wheels as an extra precaution.",
+          "step": 9,
+          "timestamp_end": 69.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 616.0,
+          "frame_start": 552.0,
+          "instruction": "Slightly loosen the lug nuts before lifting the vehicle if the wheels are to be removed.",
+          "step": 10,
+          "timestamp_end": 77.0,
+          "timestamp_start": 69.0
+        },
+        {
+          "frame_end": 688.0,
+          "frame_start": 616.0,
+          "instruction": "Verify access to the underside of the car for maintenance tasks.",
+          "step": 11,
+          "timestamp_end": 86.0,
+          "timestamp_start": 77.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/jack-up-a-car/c90o15/02.mp4",
+      "offset": 150.0,
+      "duration": 95.644,
+      "encode": "360p 15 fps crf30 aac 32k mono",
+      "bytes": 674703,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 60.0,
+          "frame_start": 0.0,
+          "instruction": "Remove the lug nuts from the wheel using a hand tool.",
+          "step": 0,
+          "timestamp_end": 4.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 165.0,
+          "frame_start": 60.0,
+          "instruction": "Position a drain pan under the vehicle's transmission and remove the drain plug to empty the fluid.",
+          "step": 1,
+          "timestamp_end": 11.0,
+          "timestamp_start": 4.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 165.0,
+          "instruction": "Place jack stands under the vehicle's frame rails to support it securely.",
+          "step": 2,
+          "timestamp_end": 20.0,
+          "timestamp_start": 11.0
+        }
+      ]
+    }
+  ]
+}

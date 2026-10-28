@@ -1,0 +1,626 @@
+{
+  "clip": "oil-change-long",
+  "source": "data/clips-more/oil-change-long.mp4",
+  "fps": 29.97002997002997,
+  "duration": 579.964807,
+  "seconds": 90.0,
+  "overlap": 15.0,
+  "chunks": [
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/00.mp4",
+      "offset": 0.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 907626,
+      "query": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 65.0,
+          "frame_start": 0.0,
+          "instruction": "Review the tool list for the 2008 Ford Escape oil change procedure, which includes a 13mm socket, ratchet, or 13mm wrench, drain pan, filter wrench, and funnel.",
+          "step": 0,
+          "timestamp_end": 13.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 180.0,
+          "frame_start": 65.0,
+          "instruction": "Position a drain bucket under the vehicle to capture the oil and prepare to remove the oil filter located on the back of the pan.",
+          "step": 1,
+          "timestamp_end": 36.0,
+          "timestamp_start": 13.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 180.0,
+          "instruction": "Locate the 13mm drain plug on the oil pan.",
+          "step": 2,
+          "timestamp_end": 48.0,
+          "timestamp_start": 36.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 240.0,
+          "instruction": "Allow the car to sit for 10 to 15 minutes to let the oil drain into the pan for maximum removal.",
+          "step": 3,
+          "timestamp_end": 60.0,
+          "timestamp_start": 48.0
+        },
+        {
+          "frame_end": 390.0,
+          "frame_start": 300.0,
+          "instruction": "Use a 13mm wrench to break the drain plug loose, noting that it may be tightened too much by previous mechanics.",
+          "step": 4,
+          "timestamp_end": 78.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 445.0,
+          "frame_start": 390.0,
+          "instruction": "Ensure the drain bucket is properly positioned to capture all the oil for proper disposal.",
+          "step": 5,
+          "timestamp_end": 89.0,
+          "timestamp_start": 78.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/01.mp4",
+      "offset": 75.0,
+      "duration": 90.0,
+      "encode": "360p 8 fps crf32 aac 24k mono",
+      "bytes": 1565848,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 200.0,
+          "frame_start": 0.0,
+          "instruction": "Position a drain bucket underneath the oil pan to capture the draining oil.",
+          "step": 0,
+          "timestamp_end": 25.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 200.0,
+          "instruction": "Loosen the drain plug slightly with a ratchet.",
+          "step": 1,
+          "timestamp_end": 30.0,
+          "timestamp_start": 25.0
+        },
+        {
+          "frame_end": 424.0,
+          "frame_start": 240.0,
+          "instruction": "Carefully unscrew the drain plug by hand and hold it securely to prevent dropping it into the oil.",
+          "step": 2,
+          "timestamp_end": 53.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 584.0,
+          "frame_start": 424.0,
+          "instruction": "Allow the oil to drain completely from the pan into the bucket.",
+          "step": 3,
+          "timestamp_end": 73.0,
+          "timestamp_start": 53.0
+        },
+        {
+          "frame_end": 632.0,
+          "frame_start": 584.0,
+          "instruction": "Reinsert the drain plug into the oil pan.",
+          "step": 4,
+          "timestamp_end": 79.0,
+          "timestamp_start": 73.0
+        },
+        {
+          "frame_end": 672.0,
+          "frame_start": 632.0,
+          "instruction": "Tighten the drain plug by hand until it is finger-tight.",
+          "step": 5,
+          "timestamp_end": 84.0,
+          "timestamp_start": 79.0
+        },
+        {
+          "frame_end": 696.0,
+          "frame_start": 672.0,
+          "instruction": "Use a ratchet and socket to further tighten the drain plug.",
+          "step": 6,
+          "timestamp_end": 87.0,
+          "timestamp_start": 84.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/02.mp4",
+      "offset": 150.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 965247,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 20.0,
+          "frame_start": 0.0,
+          "instruction": "Start screwing the plug back into the drain pan by hand.",
+          "step": 0,
+          "timestamp_end": 4.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 40.0,
+          "frame_start": 20.0,
+          "instruction": "Continue tightening the plug by hand until it is snug.",
+          "step": 1,
+          "timestamp_end": 8.0,
+          "timestamp_start": 4.0
+        },
+        {
+          "frame_end": 70.0,
+          "frame_start": 40.0,
+          "instruction": "Use a ratchet and socket to tighten the plug further.",
+          "step": 2,
+          "timestamp_end": 14.0,
+          "timestamp_start": 8.0
+        },
+        {
+          "frame_end": 105.0,
+          "frame_start": 70.0,
+          "instruction": "Give the plug an additional 1/16th of a turn with the ratchet to secure it.",
+          "step": 3,
+          "timestamp_end": 21.0,
+          "timestamp_start": 14.0
+        },
+        {
+          "frame_end": 150.0,
+          "frame_start": 105.0,
+          "instruction": "Wipe the drip of oil from the area using a glove or rag.",
+          "step": 4,
+          "timestamp_end": 30.0,
+          "timestamp_start": 21.0
+        },
+        {
+          "frame_end": 180.0,
+          "frame_start": 150.0,
+          "instruction": "Slide a drain pan underneath the oil filter area.",
+          "step": 5,
+          "timestamp_end": 36.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 220.0,
+          "frame_start": 180.0,
+          "instruction": "Locate the oil filter on the engine block.",
+          "step": 6,
+          "timestamp_end": 44.0,
+          "timestamp_start": 36.0
+        },
+        {
+          "frame_end": 270.0,
+          "frame_start": 220.0,
+          "instruction": "Attempt to unscrew the oil filter by hand.",
+          "step": 7,
+          "timestamp_end": 54.0,
+          "timestamp_start": 44.0
+        },
+        {
+          "frame_end": 340.0,
+          "frame_start": 270.0,
+          "instruction": "If the filter is too tight to remove by hand, prepare to use a tool.",
+          "step": 8,
+          "timestamp_end": 68.0,
+          "timestamp_start": 54.0
+        },
+        {
+          "frame_end": 375.0,
+          "frame_start": 340.0,
+          "instruction": "Retrieve a band filter wrench.",
+          "step": 9,
+          "timestamp_end": 75.0,
+          "timestamp_start": 68.0
+        },
+        {
+          "frame_end": 405.0,
+          "frame_start": 375.0,
+          "instruction": "Place the band filter wrench around the oil filter.",
+          "step": 10,
+          "timestamp_end": 81.0,
+          "timestamp_start": 75.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/03.mp4",
+      "offset": 225.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 1060263,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 35.0,
+          "frame_start": 0.0,
+          "instruction": "Position the new oil filter onto the mounting point by hand.",
+          "step": 0,
+          "timestamp_end": 7.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 80.0,
+          "frame_start": 35.0,
+          "instruction": "Turn the filter by hand to begin threading it onto the engine.",
+          "step": 1,
+          "timestamp_end": 16.0,
+          "timestamp_start": 7.0
+        },
+        {
+          "frame_end": 105.0,
+          "frame_start": 80.0,
+          "instruction": "Stop turning the filter to allow residual oil to drain from the gasket area.",
+          "step": 2,
+          "timestamp_end": 21.0,
+          "timestamp_start": 16.0
+        },
+        {
+          "frame_end": 165.0,
+          "frame_start": 105.0,
+          "instruction": "Loosen the filter slightly to let the remaining oil drip off.",
+          "step": 3,
+          "timestamp_end": 33.0,
+          "timestamp_start": 21.0
+        },
+        {
+          "frame_end": 225.0,
+          "frame_start": 165.0,
+          "instruction": "Wait for the oil to stop dripping from the side of the filter.",
+          "step": 4,
+          "timestamp_end": 45.0,
+          "timestamp_start": 33.0
+        },
+        {
+          "frame_end": 255.0,
+          "frame_start": 225.0,
+          "instruction": "Grab a rag to catch the oil from the filter.",
+          "step": 5,
+          "timestamp_end": 51.0,
+          "timestamp_start": 45.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 255.0,
+          "instruction": "Finish spinning the filter off by hand while holding it with the rag.",
+          "step": 6,
+          "timestamp_end": 60.0,
+          "timestamp_start": 51.0
+        },
+        {
+          "frame_end": 335.0,
+          "frame_start": 300.0,
+          "instruction": "Pour the oil from the old filter into a waste container.",
+          "step": 7,
+          "timestamp_end": 67.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 375.0,
+          "frame_start": 335.0,
+          "instruction": "Place the old oil filter on a rag to the side.",
+          "step": 8,
+          "timestamp_end": 75.0,
+          "timestamp_start": 67.0
+        },
+        {
+          "frame_end": 405.0,
+          "frame_start": 375.0,
+          "instruction": "Clean your hands before handling the new filter.",
+          "step": 9,
+          "timestamp_end": 81.0,
+          "timestamp_start": 75.0
+        },
+        {
+          "frame_end": 440.0,
+          "frame_start": 405.0,
+          "instruction": "Take the new oil filter out of the box to prepare for installation.",
+          "step": 10,
+          "timestamp_end": 88.0,
+          "timestamp_start": 81.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/04.mp4",
+      "offset": 300.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 1155630,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 50.0,
+          "frame_start": 0.0,
+          "instruction": "Position the new oil filter under the engine.",
+          "step": 0,
+          "timestamp_end": 10.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 150.0,
+          "frame_start": 50.0,
+          "instruction": "Apply a small amount of used oil to the rubber seal on the new filter to make it slippery.",
+          "step": 1,
+          "timestamp_end": 30.0,
+          "timestamp_start": 10.0
+        },
+        {
+          "frame_end": 165.0,
+          "frame_start": 150.0,
+          "instruction": "Ensure the drain plug loop is secured properly.",
+          "step": 2,
+          "timestamp_end": 33.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 225.0,
+          "frame_start": 165.0,
+          "instruction": "Inspect the seal surface on the engine block to ensure the old seal has not remained stuck to it.",
+          "step": 3,
+          "timestamp_end": 45.0,
+          "timestamp_start": 33.0
+        },
+        {
+          "frame_end": 260.0,
+          "frame_start": 225.0,
+          "instruction": "Verify that only one seal is present on the mounting surface to prevent oil leaks.",
+          "step": 4,
+          "timestamp_end": 52.0,
+          "timestamp_start": 45.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 260.0,
+          "instruction": "Spin the new oil filter onto the engine by hand until it is snug.",
+          "step": 5,
+          "timestamp_end": 60.0,
+          "timestamp_start": 52.0
+        },
+        {
+          "frame_end": 340.0,
+          "frame_start": 300.0,
+          "instruction": "Tighten the filter an additional quarter turn by hand after it is snug.",
+          "step": 6,
+          "timestamp_end": 68.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 380.0,
+          "frame_start": 340.0,
+          "instruction": "Avoid using tools to tighten the filter to prevent over-tightening.",
+          "step": 7,
+          "timestamp_end": 76.0,
+          "timestamp_start": 68.0
+        },
+        {
+          "frame_end": 440.0,
+          "frame_start": 380.0,
+          "instruction": "Wipe off any oil dripping from the seal or the drain plug area.",
+          "step": 8,
+          "timestamp_end": 88.0,
+          "timestamp_start": 76.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/05.mp4",
+      "offset": 375.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 1230306,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 55.0,
+          "frame_start": 0.0,
+          "instruction": "Wipe off any oil dripping from the seal.",
+          "step": 0,
+          "timestamp_end": 11.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 85.0,
+          "frame_start": 55.0,
+          "instruction": "Wipe off oil at the drain plug.",
+          "step": 1,
+          "timestamp_end": 17.0,
+          "timestamp_start": 11.0
+        },
+        {
+          "frame_end": 125.0,
+          "frame_start": 85.0,
+          "instruction": "Lower the car off the jack stands and move the oil bucket out of the way.",
+          "step": 2,
+          "timestamp_end": 25.0,
+          "timestamp_start": 17.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 165.0,
+          "instruction": "Pour 4 1/2 quarts of oil into the engine using a funnel.",
+          "step": 3,
+          "timestamp_end": 48.0,
+          "timestamp_start": 33.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 240.0,
+          "instruction": "Pause briefly after filling the engine with oil.",
+          "step": 4,
+          "timestamp_end": 60.0,
+          "timestamp_start": 48.0
+        },
+        {
+          "frame_end": 375.0,
+          "frame_start": 300.0,
+          "instruction": "Place the filler cap back on the engine.",
+          "step": 5,
+          "timestamp_end": 75.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 410.0,
+          "frame_start": 375.0,
+          "instruction": "Locate the dipstick and pull it out.",
+          "step": 6,
+          "timestamp_end": 82.0,
+          "timestamp_start": 75.0
+        },
+        {
+          "frame_end": 435.0,
+          "frame_start": 410.0,
+          "instruction": "Start the car and let it run for a minute.",
+          "step": 7,
+          "timestamp_end": 87.0,
+          "timestamp_start": 82.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/06.mp4",
+      "offset": 450.0,
+      "duration": 90.0,
+      "encode": "240p 5 fps crf32 aac 24k mono",
+      "bytes": 1459510,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 40.0,
+          "frame_start": 0.0,
+          "instruction": "Locate the dipstick in the engine bay.",
+          "step": 0,
+          "timestamp_end": 8.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 70.0,
+          "frame_start": 40.0,
+          "instruction": "Start the car.",
+          "step": 1,
+          "timestamp_end": 14.0,
+          "timestamp_start": 8.0
+        },
+        {
+          "frame_end": 100.0,
+          "frame_start": 70.0,
+          "instruction": "Let the car run for a minute.",
+          "step": 2,
+          "timestamp_end": 20.0,
+          "timestamp_start": 14.0
+        },
+        {
+          "frame_end": 130.0,
+          "frame_start": 100.0,
+          "instruction": "Shut off the car.",
+          "step": 3,
+          "timestamp_end": 26.0,
+          "timestamp_start": 20.0
+        },
+        {
+          "frame_end": 300.0,
+          "frame_start": 130.0,
+          "instruction": "Wait for a minute or two for the oil to drain back into the pan.",
+          "step": 4,
+          "timestamp_end": 60.0,
+          "timestamp_start": 26.0
+        },
+        {
+          "frame_end": 340.0,
+          "frame_start": 300.0,
+          "instruction": "Wait a few more minutes for the oil to drain completely.",
+          "step": 5,
+          "timestamp_end": 68.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 370.0,
+          "frame_start": 340.0,
+          "instruction": "Pull the dipstick out of the engine.",
+          "step": 6,
+          "timestamp_end": 74.0,
+          "timestamp_start": 68.0
+        },
+        {
+          "frame_end": 400.0,
+          "frame_start": 370.0,
+          "instruction": "Wipe the dipstick clean with a cloth.",
+          "step": 7,
+          "timestamp_end": 80.0,
+          "timestamp_start": 74.0
+        },
+        {
+          "frame_end": 420.0,
+          "frame_start": 400.0,
+          "instruction": "Check that the oil level is between the hash marks on the dipstick.",
+          "step": 8,
+          "timestamp_end": 84.0,
+          "timestamp_start": 80.0
+        }
+      ]
+    },
+    {
+      "file": "data/clips-serving/oil-change-long/c90o15/07.mp4",
+      "offset": 525.0,
+      "duration": 54.965,
+      "encode": "360p 8 fps crf32 aac 24k mono",
+      "bytes": 1473628,
+      "query": "This video is one segment taken from the middle of a longer recording of a single continuous procedure. List only the steps performed within this segment. Do not summarise, introduce, or conclude the overall procedure, and do not describe the segment as beginning or ending anything \u2014 the steps before and after it are covered elsewhere. Work at a fine grain: a single button press, acknowledging a dialog, reading a value, or watching an indicator each count as their own step, and steps only seconds apart are expected. Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 24.0,
+          "frame_start": 0.0,
+          "instruction": "Wipe the dipstick clean with an orange rag.",
+          "step": 0,
+          "timestamp_end": 3.0,
+          "timestamp_start": 0.0
+        },
+        {
+          "frame_end": 104.0,
+          "frame_start": 24.0,
+          "instruction": "Inspect the dipstick to check if the oil level is between the hash marks or two small holes.",
+          "step": 1,
+          "timestamp_end": 13.0,
+          "timestamp_start": 3.0
+        },
+        {
+          "frame_end": 136.0,
+          "frame_start": 104.0,
+          "instruction": "Reinsert the dipstick into the engine.",
+          "step": 2,
+          "timestamp_end": 17.0,
+          "timestamp_start": 13.0
+        },
+        {
+          "frame_end": 160.0,
+          "frame_start": 136.0,
+          "instruction": "Pull the dipstick out again to check the oil level.",
+          "step": 3,
+          "timestamp_end": 20.0,
+          "timestamp_start": 17.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 160.0,
+          "instruction": "Verify the oil level is at the top of the dipstick near the thumbnail.",
+          "step": 4,
+          "timestamp_end": 30.0,
+          "timestamp_start": 20.0
+        },
+        {
+          "frame_end": 272.0,
+          "frame_start": 240.0,
+          "instruction": "Confirm the oil level is good and the procedure is complete.",
+          "step": 5,
+          "timestamp_end": 34.0,
+          "timestamp_start": 30.0
+        }
+      ]
+    }
+  ]
+}
