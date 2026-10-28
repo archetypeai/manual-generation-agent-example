@@ -1,0 +1,193 @@
+{
+  "agent": "agt_3cj14xe93p9p3rxw2xqbsbz245",
+  "bundle": "bnd_1mggsx1xhz98qsjgryejqh1g6t",
+  "clips": [
+    {
+      "clip": "french-toast",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 5.0,
+              "tries": 1,
+              "server_ms": 4421.037,
+              "steps": 8
+            }
+          ]
+        },
+        {
+          "offset": 75.0,
+          "encode": "360p 15 fps crf30 aac 32k mono",
+          "queries": [
+            {
+              "seconds": 4.9,
+              "tries": 1,
+              "server_ms": 4100.221,
+              "steps": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "jack-up-a-car",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 4.8,
+              "tries": 1,
+              "server_ms": 4370.51,
+              "steps": 7
+            }
+          ]
+        },
+        {
+          "offset": 75.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 8.8,
+              "tries": 1,
+              "server_ms": 6733.736,
+              "steps": 12
+            }
+          ]
+        },
+        {
+          "offset": 150.0,
+          "encode": "360p 15 fps crf30 aac 32k mono",
+          "queries": [
+            {
+              "seconds": 3.0,
+              "tries": 1,
+              "server_ms": 2462.505,
+              "steps": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "make-a-latte",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 5.0,
+              "tries": 1,
+              "server_ms": 4049.355,
+              "steps": 7
+            }
+          ]
+        },
+        {
+          "offset": 75.0,
+          "encode": "240p 5 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 10.7,
+              "tries": 1,
+              "server_ms": 9944.34,
+              "steps": 20
+            }
+          ]
+        },
+        {
+          "offset": 150.0,
+          "encode": "360p 15 fps crf30 aac 32k mono",
+          "queries": [
+            {
+              "seconds": 4.5,
+              "tries": 1,
+              "server_ms": 4075.762,
+              "steps": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "mouse_assembly",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 no audio",
+          "queries": [
+            {
+              "seconds": 6.5,
+              "tries": 1,
+              "server_ms": 5918.49,
+              "steps": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "tire_i2JWkDyg26A-silent",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 15 fps crf30 no audio",
+          "queries": [
+            {
+              "seconds": 7.6,
+              "tries": 1,
+              "server_ms": 7033.787,
+              "steps": 15
+            }
+          ]
+        },
+        {
+          "offset": 75.0,
+          "encode": "360p 15 fps crf30 no audio",
+          "queries": [
+            {
+              "seconds": 6.5,
+              "tries": 1,
+              "server_ms": 5989.065,
+              "steps": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "clip": "tire_i2JWkDyg26A",
+      "chunks": [
+        {
+          "offset": 0.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 5.9,
+              "tries": 1,
+              "server_ms": 5448.573,
+              "steps": 10
+            }
+          ]
+        },
+        {
+          "offset": 75.0,
+          "encode": "360p 8 fps crf32 aac 24k mono",
+          "queries": [
+            {
+              "seconds": 6.2,
+              "tries": 1,
+              "server_ms": 5665.099,
+              "steps": 10
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "seconds": 747
+}

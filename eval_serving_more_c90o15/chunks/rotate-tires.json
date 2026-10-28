@@ -1,0 +1,100 @@
+{
+  "clip": "rotate-tires",
+  "source": "data/clips-more/rotate-tires.mp4",
+  "fps": 30.0,
+  "duration": 102.26068,
+  "seconds": 90.0,
+  "overlap": 15.0,
+  "chunks": [
+    {
+      "file": "data/clips-serving/rotate-tires/c90o15/00.mp4",
+      "offset": 0.0,
+      "duration": 102.261,
+      "encode": "360p 8 fps crf32 aac 24k mono",
+      "bytes": 1362584,
+      "query": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it \u2014 where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video.",
+      "rows": [
+        {
+          "frame_end": 208.0,
+          "frame_start": 176.0,
+          "instruction": "Turn the engine on, put the car in park, and set the parking brake.",
+          "step": 0,
+          "timestamp_end": 26.0,
+          "timestamp_start": 22.0
+        },
+        {
+          "frame_end": 240.0,
+          "frame_start": 208.0,
+          "instruction": "For manual transmission, put the car in gear.",
+          "step": 1,
+          "timestamp_end": 30.0,
+          "timestamp_start": 26.0
+        },
+        {
+          "frame_end": 280.0,
+          "frame_start": 240.0,
+          "instruction": "Loosen the lug nuts with a torque wrench on the front and rear tires on the side of the car opposite the blocks.",
+          "step": 2,
+          "timestamp_end": 35.0,
+          "timestamp_start": 30.0
+        },
+        {
+          "frame_end": 360.0,
+          "frame_start": 280.0,
+          "instruction": "Raise the vehicle with a jack and lower the vehicle onto the jack stands.",
+          "step": 3,
+          "timestamp_end": 45.0,
+          "timestamp_start": 35.0
+        },
+        {
+          "frame_end": 408.0,
+          "frame_start": 360.0,
+          "instruction": "Remove the lug nuts and front and rear tires.",
+          "step": 4,
+          "timestamp_end": 51.0,
+          "timestamp_start": 45.0
+        },
+        {
+          "frame_end": 480.0,
+          "frame_start": 408.0,
+          "instruction": "Inspect the tread on the tires and replace them if the tread shows excessive wear.",
+          "step": 5,
+          "timestamp_end": 60.0,
+          "timestamp_start": 51.0
+        },
+        {
+          "frame_end": 512.0,
+          "frame_start": 480.0,
+          "instruction": "Mount the tire formerly in the rear on the front and vice versa.",
+          "step": 6,
+          "timestamp_end": 64.0,
+          "timestamp_start": 60.0
+        },
+        {
+          "frame_end": 544.0,
+          "frame_start": 512.0,
+          "instruction": "Hand tighten the lug nuts first.",
+          "step": 7,
+          "timestamp_end": 68.0,
+          "timestamp_start": 64.0
+        },
+        {
+          "frame_end": 584.0,
+          "frame_start": 544.0,
+          "instruction": "Secure the lug nuts with a torque wrench, tightening them in a star pattern.",
+          "step": 8,
+          "timestamp_end": 73.0,
+          "timestamp_start": 68.0
+        },
+        {
+          "frame_end": 632.0,
+          "frame_start": 584.0,
+          "instruction": "Lower the vehicle and repeat the previous steps on the other side of the vehicle.",
+          "step": 9,
+          "timestamp_end": 79.0,
+          "timestamp_start": 73.0
+        }
+      ]
+    }
+  ]
+}

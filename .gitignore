@@ -41,3 +41,6 @@ __pycache__/
 
 # Internal design doc — kept locally, not published with the example.
 docs/Manual Generation Agent.md
+
+# --background output (sweep_serve.py)
+logs/

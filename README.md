@@ -7,7 +7,10 @@ timestamped manual, and score it against ground truth.
 > **Now on prod.** The example targets `https://platform.u1.archetypeai.app/api`
 > and was re-run there on 2026-10-27: see [On prod (2026-10-27)](#on-prod-2026-10-27).
 > Everything else in this README was measured on **dev** between 2026-08-10 and
-> 2026-08-27, against dev's `mga` blueprint, which is not the one prod runs.
+> 2026-08-27, against dev's `mga` blueprint, which is not the one prod runs, except
+> [Serving on dev](#serving-on-dev-load-once-one-query-per-clip-or-chunk-2026-10-27)
+> (2026-10-27 and -28, **dev only**: agent serving is not on prod as of 2026-10-28): one
+> model load for many videos, and 90 s chunks for videos up to 10 minutes.
 
 The scenario: a 2:53 roadside tire-change video with **11 documented reference
 steps**. A developer wants a manual good enough that someone could follow it, and
@@ -175,6 +178,194 @@ this says prod works at least as well here, not why.
   near-identical frames before the model sees them.
 - `prompt` still defaults to *"…with 10 steps or less."*, so **send one**.
 - The files API moved from `/v0.5/files` to `/files`.
+
+## Serving on dev: load once, one query per clip or chunk (2026-10-27)
+
+```sh
+python3 sweep_serve.py --clips tire_i2JWkDyg26A --repeat 2          # whole clip, one agent
+python3 sweep_serve.py --all --chunk 90 --overlap 15 --background   # every clip in 90 s chunks
+python3 merge_chunks.py eval_serving_c90o15                         # stitch per clip, score tire
+python3 sweep_serve.py --dir data/clips-more --all --chunk 90 --overlap 15 \
+    --out-dir eval_serving_more_c90o15 --background                 # seven more videos, up to 10 min
+python3 merge_chunks.py eval_serving_more_c90o15
+```
+
+A batch run pays the model download and load on **every** video: 617 s for the tire
+clip on prod, ~7 min of it before the first frame. **Agent serving** runs the same
+`mga` bundle with `{"mode": "serving"}`: the agent loads once, then answers
+`POST /agents/instances/{id}/query` per video in seconds.
+
+> **Agent serving is available on dev only, as of 2026-10-28.** Not on prod or
+> staging yet: the batch run above is what prod offers. Everything in this section was
+> measured on dev.
+
+Today's limits:
+
+- **One GPU agent at a time on dev.** A second agent fails within a minute with *"no
+  worker is free"*, so `sweep_serve.py` cancels its agent on exit, `kill` and Ctrl-C
+  included, unless `--keep`. Reuse a kept one with `--agent agt_…`: no load at all.
+- **The load is ~11–13 minutes, once, and `/logs` shows it.** Agents took 664–760 s to
+  reach `running` (nine agents, 2026-10-27 and -28; one took 1,696 s while dev was
+  unstable). None downloaded anything (*"Using locally available newton-fusion-1-0
+  model"*): loading took **10 min 48 s – 12 min 7 s**, against 5 min download + 1 min
+  48 s load in batch. Since 2026-10-28 `/logs` streams the load as it happens
+  (*"Still loading newton-fusion-1-0 model after 4min0s"*, once a minute), then the
+  warm-up and whisper's load, a few seconds together. `sweep_serve.py` prints it.
+  The log is gone once the agent is cancelled.
+- **The video goes inline and the request is capped at 2 MiB**, about 1.57 MB of video.
+  `sweep_serve.py` re-encodes each clip or chunk into `data/clips-serving/` (gitignored),
+  best quality first, until the request fits. Frames are resized to 224 px for the
+  model anyway, so resolution matters less than it looks; frame rate and audio bitrate
+  are what it gives up.
+- **Each query has a 58 s budget.** Most queries took 3–14 s, a few 20–28 s (the
+  whole tire clip's first, 28.5 s). The first query to a new agent no longer times out:
+  the agent warms its models up before it reports `running` (PLDEV-2432). Over
+  2026-10-27 and -28, two of ~150 chunk queries still timed out (504), both
+  floating-shelf-long, and both answered on the retry (27.9 s and 18.2 s).
+  `sweep_serve.py` retries 5xx three times.
+- **A bad video fails only its own query.** An audio-only mp4 gets `400 … probe failed:
+  no video stream`, random bytes `400 … decode failed`, and the agent answers the next
+  query (PLDEV-2480, checked 2026-10-28). Before, one bad input ended the agent and the
+  next query paid a new load. A 35-frame clip, which used to be such an input, is now
+  answered.
+- **A fresh agent can answer differently.** Two queries to one agent gave identical
+  steps, and a rerun on 2026-10-28 reproduced all six `data/clips` videos byte for byte.
+  But four of the seven `data/clips-more` videos came back different on a fresh agent,
+  at temperature 0: mostly rewording, but two opening chunks changed their step count
+  (change-a-tire-long 3 → 12, jello-shots 8 → 5). Read the step counts below as one
+  run's, not as fixed.
+- **The steps are in `response.data`**, not `{"id", "results"}`. `sweep_serve.py` wraps
+  them so `evaluate.py` and `merge_chunks.py` read serving and batch alike.
+
+### Whole clip vs. chunks — tire, scored
+
+| | steps | ref steps found | at IoU ≥ 0.5 |
+|---|---|---|---|
+| batch, prod, original clip | 16 | 11/11 | 7/11 |
+| serving, whole clip (240p 5 fps, 1.35 MB) | 15 | 9/11 | 6/11 |
+| serving, 2 × 90 s chunks, `cut` merge | 18 | 10/11 | 5/11 |
+
+The whole clip fits one query easily, and two queries gave identical steps. Chunks
+are for what does not fit: a 10-minute video sent whole gets its 64 frames ~9 s apart,
+while a 90 s chunk gets them ~1.4 s apart and each chunk fits the cap at 360p. On a
+clip this short chunking buys nothing measurable, and the chunked manual is finer
+grained than CrossTask's steps (it lists cautions like *"Never put any object or any
+part of your body under the vehicle"*), which costs it IoU.
+
+### How chunking works
+
+`--chunk 90 --overlap 15` cuts 0–90, 75–165, 150–240 s … from the **original** video,
+re-encoding each with an accurate seek (`-c copy` cuts on keyframes and drifted 7.6 s).
+A tail chunk that adds less new footage than the overlap, or has under 64 frames, joins
+the chunk before it: on its own it is an end card, and the model describes it as steps
+(*"Press the 'Enter' key."* eleven times on jack-up-a-car's 20 s tail). Under 64 frames
+also used to end the agent (TVA, 2026-10-26); it no longer does, but the short tail
+would still be an end card.
+
+**The prompt.** Every chunk after the first gets `CHUNK_PREAMBLE` before the prompt,
+taken from manual-gen-with-manual-generation-agent's `prompts.ts`: told each chunk is a
+whole video, the model gave chunks their own introduction and conclusion (*"Wait for
+the Toyota logo to appear on the screen"*, tire, 60 s chunks). **The first chunk gets the plain
+prompt**: it is the real start of the video, and told it came from the middle, the
+first chunk of french-toast and make-a-latte returned every step at 0.0–0.0 s, which
+leaves 75 s of the manual empty. Measured on 11 opening chunks, both ways:
+
+| opening chunk | preamble | plain prompt |
+|---|---|---|
+| french-toast, make-a-latte | every step at 0.0–0.0 s, dropped | real steps from 0 s and 26 s |
+| pickles | 30 steps, 22 of them *"View the sugar"*, *"View the ladle"*… | 4 real steps from 76 s |
+| change-a-tire-long | 16 steps of *"State that…"* narration | 3 real steps (12 from 0 s on 2026-10-28, starting *"Watch the intro sequence."*) |
+| jack-up-a-car | 10 steps, 0–89 s | 7 steps from 30 s |
+| check-engine-oil | 19, incl. *"Watch the Howcast logo"* | 11 real steps from 22 s |
+| tire | 2/11 at IoU ≥ 0.5 | **5/11** |
+| jello-shots | 5 steps from 63 s | 8 from 0 s, 3 of them intro (5 from 63 s on 2026-10-28) |
+| floating-shelf-long, oil-change-long | — | about the same |
+| **tire-silent** (no audio) | 9 steps, 0–81 s | **15 invented steps** at an even 8 s, to 120 s in a 90 s chunk |
+
+Silent footage is the exception: with neither narration nor the preamble to anchor
+it, the model wrote a generic tire change. `mouse_assembly`, also silent, is fine with
+the plain prompt. One example is not enough for a rule, so the plain prompt stays.
+
+**The merge** (`merge_chunks.py`, offline) follows that repo's `merge.ts`:
+
+1. A chunk is dropped whole if it loops (6+ steps, under 34% distinct) or has lost
+   the clock (every step zero-length).
+2. A step past its chunk's end (+5 s) is dropped, not clamped.
+3. The rest move to clip time; frames are recomputed at the source frame rate.
+4. Overlap duplicates go, by one of two rules, both written to `<dir>/merged/`:
+   `dedupe` — same step if from a different chunk, starting within 20 s, overlapping in
+   time and sharing 35%+ of words (the longer instruction wins); `cut` — each chunk owns
+   its span up to the middle of the overlap. `cut` is simpler and scored the same on
+   tire; `dedupe` also catches a duplicate that straddles the midpoint (jello-shots,
+   81–83 s and 81–84 s).
+5. Holes over 20 s are reported, including one at the start.
+
+### Thirteen videos, 2026-10-28
+
+Rerun on 2026-10-28 with the plain prompt on every opening chunk: two runs, 13 and 33
+queries, each with its own agent, **747 s and 870 s, of which 666 s and 665 s was the
+load**. The committed answers are this run's:
+
+| video | length | chunks | steps (`cut`) | holes | notes |
+|---|---|---|---|---|---|
+| tire | 173 s | 2 | 18 | — | scored above |
+| tire-silent | 173 s | 2 | 21 | — | 4 out-of-range steps dropped; opening invented |
+| french-toast | 156 s | 2 | 13 | — | |
+| make-a-latte | 189 s | 3 | 28 | 0–26 s | intro; some *"Listen to the instruction…"* steps |
+| jack-up-a-car | 246 s | 3 | 20 | 0–30 s | |
+| mouse_assembly | 80 s | 1 | 12 | — | sent whole, plain prompt |
+| rotate-tires | 102 s | 1 | 10 | 0–22 s | intro |
+| check-engine-oil | 128 s | 2 | 17 | 0–22 s | intro |
+| jello-shots | 209 s | 3 | 24 | 0–63 s | intro (27 steps, no hole, on 2026-10-27) |
+| pickles | 243 s | 3 | 29 | 0–76 s | intro and ingredient list |
+| change-a-tire-long | 563 s | 8 | 64 | 121–150 s | 75–165 s chunk describes only to 121 s; opens on the intro (58 steps, holes at 0–46 and 51–75 s, on 2026-10-27) |
+| oil-change-long | 580 s | 8 | 56 | — | |
+| floating-shelf-long | 589 s | 8 | 55 | 227–309, 437–459 s | 225–315 s chunk: *"Cut a piece of wood using a table saw."* ×17, dropped, both days |
+
+Most holes at the start are intros the plain prompt leaves out, not lost steps. The
+225–315 s chunk of floating-shelf-long looped on both days, so asking again does not
+fill that hole. Only tire has a reference; the rest were judged by reading.
+
+### How long it took
+
+| approach | where | wall clock | how it was spent |
+|---|---|---|---|
+| batch, tire only | prod | 612–618 s | one job per video, ~7 min of it model download + load (3 runs) |
+| batch, 13 videos | dev or prod | ~2.2 h (estimate) | 13 × ~10 min in turn; the three 10-minute videos are past batch's ~5-minute ceiling |
+| **serving, tire whole** | dev | **768 s** | 729 s load, then 2 answers: 28.5 s and 9.5 s |
+| **serving, 6 videos, 90 s chunks** (13) | dev | **792 s** | 667 s load, then 13 answers in 125 s |
+| **serving, 7 videos, 90 s chunks** (33) | dev | **1,006 s** | 677 s load, then 33 answers in 329 s, one 504 and retry included |
+| serving, 6 videos again, plain prompt on chunk 1 (13) | dev | 762 s | 677 s load, then 13 answers in 84 s |
+| serving, 6 opening chunks again | dev | 795 s | 760 s load, then 6 answers in 35 s |
+| **serving, 6 videos, rerun 2026-10-28** (13) | dev | **747 s** | 666 s load, then 13 answers in 81 s |
+| **serving, 7 videos, rerun 2026-10-28** (33) | dev | **870 s** | 665 s load, then 33 answers in 205 s, no retries |
+
+Once loaded, a video under 4 minutes costs **7–21 s** in 1–3 chunks (44 s for
+french-toast's first run), and a 10-minute video **45–57 s** in 8 chunks (145 s for
+floating-shelf-long, where one chunk timed out and was retried). All thirteen on one
+agent would take ~11–13 min of load plus ~5 min of answers, **~16–18 min against
+~2.2 h** in batch. What the table hides: the load is most of every serving run and is
+paid again by every new agent (664–760 s across nine), and the runs above are separate
+agents only because each ended with a cancel; `--keep` and `--agent` chain them on one
+load.
+
+**The videos are not in git** (`data/` is ignored; the thirteen are ~295 MB).
+`fetch_videos.py` downloads eleven from YouTube with yt-dlp, using the ids in
+manual-gen-with-manual-generation-agent's `scripts/fetch-sample-videos.mjs`, strips the
+tire clip's audio for the silent one, and checks each against the md5 of the copy
+measured here. On 2026-10-27 eleven came back byte-identical. jack-up-a-car did not:
+YouTube has since re-encoded its AV1 stream (441 kb/s, was 403) and added dubbed audio
+tracks, though the English audio is sample-identical. Its chunks, and so its answers,
+can differ slightly. `mouse_assembly` is an internal clip, not on YouTube: ask for it.
+
+```sh
+python3 fetch_videos.py --list    # ids, folders, expected md5
+python3 fetch_videos.py           # everything not already in data/
+```
+
+The chunk answers are committed (`eval_serving_c90o15/chunks/`,
+`eval_serving_more_c90o15/chunks/`), so `merge_chunks.py` reproduces every manual above
+offline, with no videos and no key.
 
 ## Evidence: what the configuration is worth
 
@@ -1285,6 +1476,11 @@ quite what was asked for.
 | `probe_max_frames.py` | Creates bundles across a `max_frames` ladder and optionally runs them. Phase 1 is free. |
 | `watch_runs.py` | Watches runs via `/logs` with log-based terminality. Use rather than polling `status`. |
 | `poll_probe.py` | Attaches to already-launched runs by agent id and compares outputs. |
+| `sweep_serve.py` | Agent serving on dev: one model load, then one query per clip or, with `--chunk`, per chunk. Re-encodes to fit the 2 MiB cap, resumes unanswered chunks, `--background` to detach. |
+| `merge_chunks.py` | Stitches chunk answers into one manual per clip (`dedupe` and `cut` rules), reports holes, scores tire. Offline. |
+| `fetch_videos.py` | Downloads the serving videos from YouTube into `data/clips/` and `data/clips-more/` and checks their md5. |
+| `background.py` | `--background`: relaunch under `nohup` + `caffeinate`, log to `logs/`; `kill` cleans up like Ctrl-C. |
+| `eval_serving*/` | Serving outputs: whole-clip tire, and the 90 s chunk answers with their merged manuals. |
 | `docs/` | The MGA design doc this example implements. |
 
 ## Not yet built
@@ -1310,7 +1506,9 @@ quite what was asked for.
   until the cap is lifted.
 - **A precision-oriented prompt.** Whether an action-only instruction keeps C's
   10/11 recall while dropping the 4 caution entries is untested.
-- **Chunking for long videos**, for the ~5-minute ceiling.
+- **Chunking for long videos in batch.** Serving chunks up to 10-minute videos
+  (see [Serving on dev](#serving-on-dev-load-once-one-query-per-clip-or-chunk-2026-10-27));
+  batch still sends one whole video per run.
 
 ## Dependency risk — the predicted failure, and what actually happened
 

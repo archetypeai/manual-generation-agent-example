@@ -75,7 +75,7 @@ def agents_base() -> str:
 
 
 def request(method: str, url: str, body=None, headers=None, raw: bool = False,
-            retries: int = 4, allow_status: bool = False):
+            retries: int = 4, allow_status: bool = False, timeout: int = 120):
     """Call the API, retrying transient network failures.
 
     Polls run for a long time, and a single DNS hiccup or socket timeout should
@@ -95,7 +95,7 @@ def request(method: str, url: str, body=None, headers=None, raw: bool = False,
         for k, v in (headers or {}).items():
             req.add_header(k, v)
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 payload = resp.read()
                 if allow_status:
                     return resp.status, payload if raw else json.loads(payload or b"null")
