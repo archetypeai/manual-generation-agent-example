@@ -236,11 +236,11 @@ def release(agent: str, bundle: str | None) -> str:
         return f"cancelled {agent}"
     for _ in range(12):
         code, _ = api.request("DELETE", f"{base}/instances/{agent}", raw=True, allow_status=True)
-        if code < 300 or code == 404:
+        if 200 <= code < 300 or code == 404:
             break
         time.sleep(5)
     code, body = api.request("DELETE", f"{base}/bundles/{bundle}", raw=True, allow_status=True)
-    if code < 300:
+    if 200 <= code < 300:
         return f"cancelled and deleted {agent}, deleted {bundle}"
     return f"cancelled {agent}; {bundle} NOT deleted ({code}): {str(body)[:200]}"
 
