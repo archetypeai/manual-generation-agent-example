@@ -44,3 +44,6 @@ docs/Manual Generation Agent.md
 
 # --background output (sweep_serve.py)
 logs/
+
+# Lifecycle 2.0 ids: the project, copies, packages, deployments and sessions
+state/

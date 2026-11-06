@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Minimal stdlib-only client for the Archetype AI Agent API.
 
-Shared by inspect_bundle.py (discovery) and run_mga_example.py (inference).
-Auth and endpoint come from the environment, with a local .env loaded if
+Shared by run_mga_example.py, sweep_serve.py and cleanup.py. Auth and endpoint come from the environment, with a local .env loaded if
 present: ATAI_API_KEY, ATAI_API_ENDPOINT.
 
 Adapted from the RED example's red_api.py. Two things differ, both because MGA
@@ -14,18 +13,27 @@ takes video rather than a sensor CSV:
   * there is no fitted-artifact path. MGA V1 is zero-shot: the design doc states
     there are no build-time optimization steps, so nothing is ever fitted and no
     s3:// artifact is ever pinned into a bundle.
+
+The Agent Lifecycle 2.0: a copy of `mga` in a project, with this run's values
+set on it, is packaged (its models resolved once), the package is deployed as
+`batch` or `serving`, and work runs in sessions on the deployment. A batch
+session is one run over one video; a serving session answers `/query` until it
+is cancelled. mga_project.py keeps the ids.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import mimetypes
 import os
-import re
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+
+# A session's terminal statuses.
+TERMINAL = {"completed", "failed", "cancelled"}
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -185,80 +193,189 @@ class _ChainedReader:
         return out
 
 
-def blueprint_must_exist(key: str) -> dict:
-    """Fetch a blueprint, exiting with guidance if it is not in the org."""
-    status, payload = request("GET", f"{agents_base()}/blueprints/{key}",
+def get_blueprint(reference: str) -> dict:
+    """Fetch a blueprint by key or `blp_` id, exiting with guidance if it is not visible."""
+    status, payload = request("GET", f"{agents_base()}/blueprints/{reference}",
                               allow_status=True)
     if status == 404:
-        sys.exit(f"blueprint '{key}' is not registered in your org — ask an org "
-                 f"admin to register it, or run inspect_bundle.py to list what is.")
+        sys.exit(f"blueprint '{reference}' is not visible to this API key — list what "
+                 f"is with GET {agents_base()}/blueprints")
     if status != 200:
-        sys.exit(f"GET blueprints/{key} failed ({status}): {payload}")
+        sys.exit(f"GET blueprints/{reference} failed ({status}): {payload}")
     return payload
 
 
-def poll_agent(agent_id: str, timeout_s: int, interval_s: int = 15) -> str:
-    """Poll until terminal, streaming new audit events as they appear."""
-    agents = agents_base()
-    deadline = time.time() + timeout_s
+def packages_url(package_id: str = "") -> str:
+    """A package pins one blueprint and the models it resolves to. It carries no
+    values: it runs its blueprint exactly as stored, so max_frames, max_new_tokens
+    and prompt are set on the blueprint copy it is built from."""
+    base = f"{agents_base()}/packages"
+    return f"{base}/{package_id}" if package_id else base
+
+
+def deployments_url(deployment_id: str = "") -> str:
+    base = f"{agents_base()}/deployments"
+    return f"{base}/{deployment_id}" if deployment_id else base
+
+
+def sessions_url(session_id: str = "") -> str:
+    base = f"{agents_base()}/sessions"
+    return f"{base}/{session_id}" if session_id else base
+
+
+def _wait_for(url: str, status: str, waiting: str, timeout_s: int, every_s: int = 5) -> dict:
+    obj = request("GET", url)
+    t0 = time.time()
+    while obj["status"] == waiting:
+        if time.time() - t0 > timeout_s:
+            sys.exit(f"{obj['id']} still {waiting} after {timeout_s} s")
+        time.sleep(every_s)
+        obj = request("GET", url)
+    if obj["status"] != status:
+        sys.exit(f"{obj['id']} is {obj['status']}, not {status}: {obj.get('error')}")
+    return obj
+
+
+def copy_blueprint(source: str, project_id: str, key: str, values: dict,
+                   name: str | None = None) -> dict:
+    """POST /agents/blueprints/{source}/copy with `values` set in the copy.
+
+    This is where a bundle's `values` went. A copy takes `overrides.values`, each
+    of which must be one the blueprint declares (an undeclared key is a 400, unlike
+    a bundle, which stored it and ignored it). `mga` fits nothing, so any of its
+    values may be overridden. The copy lands in `project_id` under `key`; a key
+    already in use there is a 409.
+    """
+    body = {"project_id": project_id, "blueprint_key": key,
+            "overrides": {"values": values}}
+    if name:
+        body["name"] = name
+    return request("POST", f"{agents_base()}/blueprints/{source}/copy", body=body)
+
+
+def create_package(blueprint_id: str, name: str) -> dict:
+    """Package one blueprint for the platform; it starts `building`.
+
+    Record its id before package_ready(), so a build that fails or is
+    interrupted can still be deleted."""
+    return request("POST", packages_url(), body={
+        "blueprint_ids": [blueprint_id], "target": {"kind": "platform"}, "name": name[:128]})
+
+
+def package_ready(package_id: str, timeout_s: int = 900) -> dict:
+    return _wait_for(packages_url(package_id), "ready", "building", timeout_s)
+
+
+def deploy(package_id: str, kind: str) -> dict:
+    """Deploy a ready package as `batch` or `serving`; it starts `deploying`.
+
+    A batch deployment is ready at once; a serving one is placed on a GPU worker
+    first. Record its id before deployment_ready()."""
+    return request("POST", deployments_url(), body={"package_id": package_id, "kind": kind})
+
+
+def deployment_ready(deployment_id: str, timeout_s: int = 900) -> dict:
+    return _wait_for(deployments_url(deployment_id), "ready", "deploying", timeout_s)
+
+
+def open_session(deployment_id: str, video_file_id: str | None = None) -> dict:
+    """A batch session over one video, or a serving session with none.
+
+    The video goes in `connectors.source` exactly as a bundle run took it. MGA
+    takes no text input: the instruction is the copy's `prompt` value."""
+    body = {"deployment_id": deployment_id}
+    if video_file_id:
+        body["connectors"] = {"source": [{"type": "file", "id": video_file_id, "format": "mp4"}]}
+    return request("POST", sessions_url(), body=body)
+
+
+def wait_running(session_id: str, timeout_s: int = 1800) -> dict:
+    """A serving session takes queries once it is `running`."""
+    return _wait_for(sessions_url(session_id), "running", "pending", timeout_s, every_s=10)
+
+
+def poll_session(session_id: str, timeout_s: int = 3600, interval_s: int = 20) -> str:
+    """Poll a batch session until it ends, printing its events as they appear.
+
+    Returns the final status (`completed`, `failed`, `cancelled`), or `timeout`.
+
+    A session has no /logs, only /events: what the platform records about the
+    session (opened, dispatched, failed with a reason), not the model-load timings
+    and parser warnings a bundle run's /logs carried. A manual that came back
+    empty still ends `completed`, so count its steps.
+    """
     seen: set[str] = set()
-    status = "running"
-    while status not in ("completed", "failed", "canceled") and time.time() < deadline:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        ses = request("GET", sessions_url(session_id))
+        events = request("GET", f"{sessions_url(session_id)}/events?limit=100").get("data", [])
+        for ev in reversed(events):                    # newest first
+            marker = f"{ev.get('created_at')}|{ev.get('message')}"
+            if marker in seen:
+                continue
+            seen.add(marker)
+            print(f"  {local_time(ev.get('created_at'))} "
+                  f"{str(ev.get('level', 'info')):7} {ev.get('message')}")
+        if ses["status"] in TERMINAL:
+            if ses.get("error"):
+                print(f"  {session_id}: {ses['error']}")
+            return ses["status"]
         time.sleep(interval_s)
-        status = request("GET", f"{agents}/instances/{agent_id}").get("status")
-        for ev in request("GET", f"{agents}/instances/{agent_id}/events").get("data", []):
-            marker = f"{ev.get('created_at')}{ev.get('message')}"
-            if marker not in seen:
-                seen.add(marker)
-                print(f"  [{ev.get('level', 'info')}] {ev.get('created_at', '')}  "
-                      f"{ev.get('message', '')}")
-        print(f"  {time.strftime('%H:%M:%S')} status={status}")
-    return status
+    return "timeout"
 
 
-def jos_job_id(agent_id: str) -> str | None:
-    """The JOS job id is announced in the agent's events at dispatch."""
-    events = request("GET", f"{agents_base()}/instances/{agent_id}/events")
-    job_id = None
-    for ev in events.get("data", []):
-        m = re.search(r"dispatched to JOS as (job_\w+)", str(ev.get("message", "")))
-        if m:
-            job_id = m.group(1)
-    return job_id
+def local_time(stamp) -> str:
+    """An event's UTC `created_at` as local HH:MM:SS, like the script's own lines."""
+    try:
+        return datetime.datetime.fromisoformat(str(stamp).replace("Z", "+00:00")) \
+            .astimezone().strftime("%H:%M:%S")
+    except ValueError:
+        return str(stamp)[11:19]
 
 
 def fetch_ref(ref: str) -> bytes:
-    """Download a /results ref, which comes in two shapes.
+    """Download a /results ref.
 
-    A run output's ref is a *relative* platform path ("/files/download/<name>")
-    that resolves under files_root() and needs the bearer token. An absolute ref is a
-    presigned S3 URL carrying its own auth, and adding the header breaks it.
-    """
+    An absolute ref is presigned and must NOT get the bearer header. A session's
+    relative ref is a root path, `/api/files/<id>/content`, not one under the
+    endpoint, and needs the token."""
     if ref.startswith("http"):
         with urllib.request.urlopen(ref, timeout=300) as resp:
             return resp.read()
-    return request("GET", f"{files_root()}{ref}", raw=True)
+    endpoint = api_base()
+    root = endpoint.removesuffix("/api") if ref.startswith("/api/") else files_root()
+    return request("GET", f"{root}{ref}", raw=True)
 
 
-def download_results(agent_id: str, out_path: str) -> str | None:
-    """Fetch /results and save the first output to out_path."""
-    results = request("GET", f"{agents_base()}/instances/{agent_id}/results")
-    items = results.get("data", results if isinstance(results, list) else [])
+def fetch_results(session_id: str) -> bytes | None:
+    """The session's manual: the first output it wrote."""
+    items = request("GET", f"{sessions_url(session_id)}/results").get("data") or []
     if not items:
-        print("  no results returned")
+        print("  no results (a failed session leaves none)")
         return None
-    print(f"results ({len(items)}):")
-    for item in items:
-        inner = item.get("data") or {}
-        print(f"  {inner.get('filename') or item.get('id')}  "
-              f"({inner.get('num_bytes', '?')} bytes)")
-    inner = items[0].get("data") or {}
-    ref = inner.get("ref") or items[0].get("ref") or items[0].get("url")
-    if not ref:
+    inner = items[-1].get("data") or {}           # newest first: the last is the first written
+    if not inner.get("ref"):
         print("  results carried no download ref")
         return None
-    payload = fetch_ref(ref)
-    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    open(out_path, "wb").write(payload)
-    print(f"saved output to {out_path}")
-    return out_path
+    return fetch_ref(inner["ref"])
+
+
+def cancel_session(session_id: str) -> None:
+    """POST /cancel. Do NOT send DELETE expecting a no-op — it removes the session."""
+    request("POST", f"{sessions_url(session_id)}/cancel", body={}, allow_status=True)
+
+
+def end_session(session_id: str) -> None:
+    """Cancel a session that is still going, then delete it."""
+    status, ses = request("GET", sessions_url(session_id), allow_status=True)
+    if status == 200 and ses.get("status") not in TERMINAL:
+        cancel_session(session_id)
+    request("DELETE", sessions_url(session_id), raw=True, allow_status=True)
+
+
+def end_deployment(deployment_id: str) -> None:
+    """Stop a deployment that is still up, then delete it."""
+    status, dpl = request("GET", deployments_url(deployment_id), allow_status=True)
+    if status == 200 and dpl.get("status") not in ("stopped", "failed"):
+        request("POST", f"{deployments_url(deployment_id)}/stop", body={}, allow_status=True)
+    request("DELETE", deployments_url(deployment_id), raw=True, allow_status=True)

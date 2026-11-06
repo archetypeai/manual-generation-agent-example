@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the Manual Generation Agent on a CrossTask video, end to end.
 
-Single file, stdlib only — no pip install, no virtualenv. Copy this file plus a
-.env next to it and run it.
+Stdlib only apart from mga_api.py and mga_project.py next to it — no pip
+install, no virtualenv. Put a .env next to them and run it.
 
     ATAI_API_KEY=<API key>
     ATAI_API_ENDPOINT=https://platform.u1.archetypeai.app/api
@@ -12,46 +12,41 @@ Single file, stdlib only — no pip install, no virtualenv. Copy this file plus 
     python3 run_mga_example.py --max-frames 16
     python3 run_mga_example.py --dry-run      # print the plan, call nothing
 
-Expect ~10 minutes on prod (617 s on 2026-10-27: ~7 min of model download and
-load on every run, since nothing is cached between runs, then ~1.1x realtime
-processing). Dev took ~15 minutes.
+Expect ~10 minutes on prod (617 s on 2026-10-27, with bundles: ~7 min of model
+download and load on every run, since nothing is cached between runs, then ~1.1x
+realtime processing). Dev took ~15 minutes.
 
-Run ONE AT A TIME. An earlier version of this note said dev serialises jobs, on
-the strength of four submissions that produced ~800 s queue waits. That was
-wrong: three concurrent runs on 2026-08-13 came up as three concurrent pods, and
-one was SIGKILLed (`pod.terminated  Error (exit=137)`) partway through loading.
+On the Agent Lifecycle 2.0 a run is: the project's copy of `mga` at this run's
+max_frames, max_new_tokens and prompt (made once per setting, see mga_project.py),
+its package and batch deployment (also once per setting), and one batch session
+over the video. state/lifecycle.json keeps the ids; `python3 cleanup.py --yes`
+deletes the sessions, deployments and packages.
 
-FIVE THINGS THAT WILL BITE YOU (verified on dev, 2026-08-10 and 2026-08-13)
+Run ONE AT A TIME. Three concurrent runs on dev on 2026-08-13 came up as three
+concurrent pods, and one was SIGKILLed (exit 137) partway through loading.
 
-  1. The bundle endpoint is PLURAL. `POST /agents/bundle` returns 404; it is
-     `POST /agents/bundles`. The clients committed in the RED and OSM example
-     repos still use the singular form and fail against current dev.
+THREE THINGS THAT WILL BITE YOU
 
-  2. Starting a run returns HTTP 202, not 201. Treat only 201 as success and you
-     will report a failure while the agent runs unattended on the GPU with
-     nothing collecting its output.
+  1. Set the values on the copy. A package, a deployment and a batch session take
+     none, and dev's `mga` defaults (2026-11) are max_new_tokens 8192 and a prompt
+     that caps the manual at ~10 steps. A plain copy runs at those.
 
-  3. Poll /logs, NOT /events. `GET /agents/instances/{id}/logs` is the stream the
-     console shows: model load timings, per-input progress, and the real error.
-     `/events` returns only "run started" and "dispatched to JOS" — not enough to
-     diagnose anything.
+  2. A session has /events, not /logs. Events say what the platform did (opened,
+     dispatched, failed with a reason); the model-load timings and the parser's
+     warnings a bundle run's /logs carried are not there. An empty manual still
+     ends `completed`, so count the steps.
 
-  4. The instance `status` field lies in BOTH directions. We saw `running`
-     persist 20+ minutes after a pod terminated with exit=1, and `running` after
-     a job had completed. Decide terminality from the log stream.
-
-  5. `file_id` IS the filename, and it is a MUTABLE, ORG-WIDE pointer. Uploading
+  3. `file_id` IS the filename, and it is a MUTABLE, ORG-WIDE pointer. Uploading
      the same name again repoints it and orphans the previous object, so a
      colleague running this example with the default clip kills your in-flight
-     run — and the other way round. It surfaces ~7 min later as
-     `S3 object not found`, blaming storage rather than the overwrite, because
-     input resolution happens at submit time but the fetch happens after the
-     model load. upload_name() below suffixes every upload for this reason.
+     run — and the other way round. It surfaced ~7 min later as
+     `S3 object not found` (with bundles), blaming storage rather than the
+     overwrite. upload_name() below suffixes every upload for this reason.
 
 Also worth knowing: unlike the `red`/`osm` blueprints, MGA needs NO `artifacts`
 map — the blueprint pins newton-fusion and whisper itself. And `max_frames`
-accepts any value at bundle creation (16, 512, 1024, -1 all return `ready`), so
-the API will not stop you setting something the pipeline cannot honour.
+accepted any value on a bundle (16, 512, 1024, -1 all returned `ready`), so do
+not expect the API to stop you setting something the pipeline cannot honour.
 """
 from __future__ import annotations
 
@@ -63,10 +58,10 @@ import glob
 import os
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 import uuid
+
+import mga_api as api
+import mga_project as project
 
 # CrossTask task 40567 "Change a Tire", video i2JWkDyg26A. 173 s, 640x360,
 # 25 fps, all 11 reference steps annotated. Chosen deliberately: MGA fails on
@@ -74,7 +69,7 @@ import uuid
 # barely matters because the pipeline resizes every frame to 224x224.
 VIDEO_URL = "https://www.youtube.com/watch?v=i2JWkDyg26A"
 VIDEO_PATH = "data/clips/tire_i2JWkDyg26A.mp4"  # gitignored: videos are not ours to redistribute
-# Target the blueprint KEY, not an id.
+# Copy from the blueprint KEY, not an id.
 #
 # The platform accepts either, and a key always resolves to whatever is currently
 # canonical and active. That is not a stylistic preference — it is the difference
@@ -227,62 +222,6 @@ EMPTY_MD5 = "1e724b1286bd1771ec6b3856b47d4daa"
 # The original 256-token-capped output, for historic comparison.
 TRUNCATED_MD5 = "275677ab10f75f4eb26e3c07d4154f85"
 
-TERMINAL_EVENTS = ("pod.terminated", "job.completed", "job.failed", "job.canceled")
-
-
-def load_dotenv(path: str = ".env") -> None:
-    if not os.path.exists(path):
-        return
-    for line in open(path):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            v = v.strip()
-            # A quoted value would otherwise keep its quotes: `"https://…"` is not a URL.
-            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-                v = v[1:-1]
-            os.environ.setdefault(k.strip(), v)
-
-
-def env() -> tuple[str, str]:
-    load_dotenv()
-    key = os.environ.get("ATAI_API_KEY")
-    endpoint = (os.environ.get("ATAI_API_ENDPOINT") or "").rstrip("/")
-    if not key:
-        sys.exit("ATAI_API_KEY is not set (put it in .env)")
-    if not endpoint:
-        sys.exit("ATAI_API_ENDPOINT is not set (put it in .env)")
-    return key, endpoint
-
-
-def files_root(endpoint: str) -> str:
-    """Where the files API and run-output refs resolve.
-
-    The platform.* endpoints (`https://platform[.dev].u1.archetypeai.app/api`)
-    serve files at `<endpoint>/files`; the legacy api.* hosts served them at
-    `<endpoint>/v0.5/files`. /agents is at `<endpoint>/agents` on both.
-    """
-    return endpoint if endpoint.endswith("/api") else f"{endpoint}/v0.5"
-
-
-def api(method: str, url: str, body=None, raw: bool = False):
-    key, _ = env()
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {key}")
-    if data:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            payload = resp.read()
-            # 202 is a success here — see gotcha 2 in the module docstring.
-            if resp.status not in (200, 201, 202):
-                sys.exit(f"{method} {url} unexpected status {resp.status}")
-            return payload if raw else json.loads(payload or b"null")
-    except urllib.error.HTTPError as e:
-        sys.exit(f"{method} {url} failed ({e.code}): {e.read().decode(errors='replace')}")
-
-
 def _on_path(name: str) -> bool:
     return any(os.access(os.path.join(p, name), os.X_OK)
                for p in os.environ.get("PATH", "").split(os.pathsep))
@@ -372,60 +311,6 @@ def upload_name(path: str) -> str:
     return f"{stem}-{stamp}-{uuid.uuid4().hex[:4]}{ext or '.mp4'}"
 
 
-def upload(path: str, name: str | None = None) -> str:
-    """POST the video to the files API as multipart/form-data.
-
-    The declared Content-Type matters: the files API enforces a MIME allowlist on
-    what you declare, not on the bytes, so an .mp4 sent as text/csv is rejected.
-    This reads the file into memory, which is fine for the 5 MB example clip;
-    stream it in chunks if you swap in something much larger.
-    """
-    key, endpoint = env()
-    boundary = uuid.uuid4().hex
-    name = name or os.path.basename(path)
-    body = b"".join([
-        f"--{boundary}\r\n".encode(),
-        f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'.encode(),
-        b"Content-Type: video/mp4\r\n\r\n",
-        open(path, "rb").read(),
-        f"\r\n--{boundary}--\r\n".encode(),
-    ])
-    req = urllib.request.Request(f"{files_root(endpoint)}/files", data=body, method="POST")
-    req.add_header("Authorization", f"Bearer {key}")
-    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
-    try:
-        with urllib.request.urlopen(req, timeout=900) as resp:
-            out = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        sys.exit(f"upload failed ({e.code}): {e.read().decode(errors='replace')}")
-    print(f"  file_id={out['file_id']}")
-    return out["file_id"]
-
-
-def watch(agent_id: str, timeout_s: int = 60 * 60) -> str:
-    """Stream /logs until a terminal event. Ignores the `status` field entirely."""
-    _, endpoint = env()
-    seen: set[str] = set()
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        rows = sorted(
-            api("GET", f"{endpoint}/agents/instances/{agent_id}/logs?limit=500").get("data", []),
-            key=lambda r: str(r.get("created_at")),
-        )
-        for r in rows:
-            marker = f"{r.get('created_at')}|{r.get('event_type')}|{r.get('message')}"
-            if marker in seen:
-                continue
-            seen.add(marker)
-            print(f"  {str(r.get('created_at'))[11:19]} {str(r.get('level')):7} "
-                  f"{str(r.get('event_type')):28} {r.get('message')}")
-        if rows and str(rows[-1].get("event_type")) in TERMINAL_EVENTS:
-            failed = any(str(r.get("level")) == "ERROR" for r in rows)
-            return "failed" if failed else "completed"
-        time.sleep(20)
-    return "timeout"
-
-
 def content_digest(path: str) -> str:
     """md5 of the manual's CONTENT, independent of how it was serialised.
 
@@ -477,32 +362,6 @@ def normalise_id(payload: bytes, canonical: str) -> bytes:
     for rec in (doc if isinstance(doc, list) else [doc]):
         rec["id"] = canonical
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode()
-
-
-def fetch_results(agent_id: str, out_path: str,
-                  canonical_id: str | None = None) -> str | None:
-    _, endpoint = env()
-    results = api("GET", f"{endpoint}/agents/instances/{agent_id}/results")
-    items = results.get("data") or []
-    if not items:
-        print("  no results (a failed run leaves none)")
-        return None
-    inner = items[0].get("data") or {}
-    ref = inner.get("ref") or items[0].get("ref")
-    if not ref:
-        print("  results carried no download ref")
-        return None
-    # A run output's ref is a RELATIVE platform path that resolves under files_root() and
-    # needs the bearer token; an absolute ref is presigned and must not get the
-    # header. Run outputs do not expire, so this can be re-fetched later.
-    payload = api("GET", f"{files_root(endpoint)}{ref}", raw=True) if not ref.startswith("http") \
-        else urllib.request.urlopen(ref, timeout=300).read()
-    if canonical_id:
-        payload = normalise_id(payload, canonical_id)
-    open(out_path, "wb").write(payload)
-    print(f"  saved {out_path} ({len(payload)} bytes, "
-          f"md5 {hashlib.md5(payload).hexdigest()})")
-    return out_path
 
 
 # The reference video, as it appears in a record's `id`. The digest below is for
@@ -584,10 +443,10 @@ def main() -> None:
                          "reader and preprocessor batch size, so they land in one "
                          "batch; the blueprint default is 16. (default: 64)")
     ap.add_argument("--blueprint", default=BLUEPRINT_DEFAULT,
-                    help=f"blueprint id or KEY (default: {BLUEPRINT_DEFAULT!r}). A key "
-                         f"tracks whatever is canonical and active. A pinned id can "
-                         f"stop resolving when the blueprint is republished — which is "
-                         f"exactly what happened to the id this used to default to.")
+                    help=f"the blueprint to copy, by id or KEY (default: {BLUEPRINT_DEFAULT!r}). "
+                         f"A key tracks whatever is canonical and active. A pinned id "
+                         f"can stop resolving when the blueprint is republished — which "
+                         f"is exactly what happened to the id this used to default to.")
     ap.add_argument("--max-new-tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS,
                     help=f"output budget (default {DEFAULT_MAX_NEW_TOKENS}, matching the "
                          f"blueprint). The model reasons before answering out of this "
@@ -600,7 +459,6 @@ def main() -> None:
                          "if that stops being true). Say what to COVER, never how to "
                          "format: the results parser owns the output template, and a "
                          "format-overriding prompt makes it return zero steps.")
-    ap.add_argument("--name", default="MGA CrossTask tire change")
     ap.add_argument("--output", default="data/mga-output.json")
     ap.add_argument("--show", metavar="JSONL", help="pretty-print an output file, no API calls")
     ap.add_argument("--dry-run", action="store_true")
@@ -610,19 +468,23 @@ def main() -> None:
         show(args.show)
         return
 
-    _, endpoint = env()
-    values = {"max_frames": args.max_frames}
-    if args.max_new_tokens is not None:
-        values["max_new_tokens"] = args.max_new_tokens
-    if args.prompt is not None:
-        values["prompt"] = args.prompt
+    values = {"max_frames": args.max_frames, "max_new_tokens": args.max_new_tokens,
+              "prompt": args.prompt}
 
     if args.dry_run:
-        print(f"POST {endpoint}/agents/bundles")
-        print(json.dumps({"blueprint": args.blueprint, "name": args.name,
-                          "values": values}, indent=2))
-        print(f"POST {endpoint}/agents/bundles/<id>/run")
-        print(json.dumps({"connectors": {"source": [
+        endpoint = api.api_base()
+        key = project.setting_key(values, args.blueprint)
+        print("once per setting (reused while state/lifecycle.json holds it):\n")
+        print(f"POST {endpoint}/agents/blueprints/{args.blueprint}/copy")
+        print(json.dumps({"project_id": f"<{project.PROJECT}>", "blueprint_key": key,
+                          "overrides": {"values": values}}, indent=2))
+        print(f"POST {endpoint}/agents/packages")
+        print(json.dumps({"blueprint_ids": ["<the copy>"], "target": {"kind": "platform"}},
+                         indent=2))
+        print(f"POST {endpoint}/agents/deployments")
+        print(json.dumps({"package_id": "<the package>", "kind": "batch"}, indent=2))
+        print(f"\nper run:\n\nPOST {endpoint}/agents/sessions")
+        print(json.dumps({"deployment_id": "<the deployment>", "connectors": {"source": [
             {"type": "file", "id": upload_name(args.video), "format": "mp4"}]}}, indent=2))
         return
 
@@ -638,10 +500,9 @@ def main() -> None:
 
     # Preflight BEFORE uploading: a value the blueprint will silently ignore should
     # be reported before spending bandwidth and 15 minutes of GPU, not after.
-    # A value is only honoured if it is declared in `values` AND referenced as
-    # ${values.<key>} by some node or connector; the API accepts anything else and
-    # drops it.
-    bp = api("GET", f"{endpoint}/agents/blueprints/{args.blueprint}")
+    # A copy refuses an undeclared value with a 400, but one that is declared and
+    # referenced by no node or connector is accepted and has no effect.
+    bp = api.get_blueprint(args.blueprint)
     doc = bp["document"]
     wired = json.dumps({"nodes": doc.get("nodes"), "connectors": doc.get("connectors")})
     inert = [k for k in values
@@ -659,54 +520,59 @@ def main() -> None:
         if "prompt" in inert:
             print(f"    prompt has been unwired before. When it is, the blueprint's "
                   f"own instruction applies:\n"
-                  f"    {doc['connectors']['source']['config'].get('default_text')!r}\n"
+                  f"    {doc.get('values', {}).get('prompt')!r}\n"
                   f"    which caps the manual at ~10 steps however long the video is.")
 
     print(f"uploading {args.video} ...")
     # Unique per upload: file_id is an org-wide mutable pointer, so a plain
     # basename lets a colleague's run overwrite this one's input mid-flight.
-    name = upload_name(args.video)
-    file_id = upload(args.video, name)
+    file_id = api.upload_file(args.video, upload_name(args.video))["file_id"]
+    print(f"  file_id={file_id}")
 
-    # No `artifacts` map: the mga blueprint pins newton-fusion:1.0 and
-    # whisper:large-v3 itself — the main shape difference from red/osm, which
-    # require a fitted classifier artifact.
-    shown = dict(values)
-    if "prompt" in shown and len(shown["prompt"]) > 60:
-        shown["prompt"] = shown["prompt"][:57] + "..."
-    print(f"creating bundle (values={json.dumps(shown)}) ...")
-    bundle = api("POST", f"{endpoint}/agents/bundles",
-                 body={"blueprint": args.blueprint, "name": args.name,
-                       "values": values})
-    print(f"  bundle_id={bundle['id']}  status={bundle.get('status')}")
+    # The setting's copy, package and batch deployment: made on the first run at
+    # this setting, reused after. No `artifacts` map: the mga blueprint pins
+    # newton-fusion and whisper itself — the main shape difference from red/osm,
+    # which require a fitted classifier artifact.
+    print(f"\nthe agent for {project.setting_key(values, args.blueprint)} ...")
+    rec = project.agent(values, "batch", source=args.blueprint)
+    print(f"  copy {rec['blueprint']}  package {rec['package']}  "
+          f"deployment {rec['batch']}")
 
-    agent = api("POST", f"{endpoint}/agents/bundles/{bundle['id']}/run",
-                body={"connectors": {"source": [
-                    {"type": "file", "id": file_id, "format": "mp4"}]}})
-    agent_id = agent["id"]
-    print(f"started run\n  agent_id={agent_id}\n  watching /logs "
-          f"(~7.5 min of model loading first) ...")
+    session_id = api.open_session(rec["batch"], file_id)["id"]
+    project.record_session(session_id, setting=rec["key"], kind="batch",
+                           video=args.video, out=args.output)
+    print(f"started session\n  session_id={session_id}\n"
+          f"  watching its status and /events (~7.5 min of model loading first) ...")
 
-    verdict = watch(agent_id)
-    print(f"\nrun {verdict}")
-    saved = fetch_results(agent_id, args.output,
-                          canonical_id=os.path.splitext(os.path.basename(args.video))[0])
-    if saved:
-        # A run can complete with results: [] and no ERROR row anywhere — seen when
-        # the model produced text the parser could not fit to its template, and when
-        # max_new_tokens truncated the list before it ended. Neither the status field
-        # nor the logs distinguish that from success, so check the count here.
-        steps = sum(len(r.get("results", [])) for r in load_records(saved))
+    try:
+        verdict = api.poll_session(session_id)
+    except KeyboardInterrupt:
+        # Never leave a run on the GPU: an abandoned run blocks everyone behind it.
+        print(f"\ninterrupted — cancelling {session_id}")
+        api.cancel_session(session_id)
+        sys.exit(130)
+    print(f"\nsession {verdict}")
+
+    payload = api.fetch_results(session_id)
+    if payload is not None:
+        # The output `id` comes from the uploaded name; put the video's own stem back.
+        payload = normalise_id(payload, os.path.splitext(os.path.basename(args.video))[0])
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        open(args.output, "wb").write(payload)
+        print(f"  saved {args.output} ({len(payload)} bytes, "
+              f"md5 {hashlib.md5(payload).hexdigest()})")
+        # A run can complete with results: [] — seen when the model produced text
+        # the parser could not fit to its template, and when max_new_tokens ran out
+        # mid-reasoning. The session status does not distinguish that from success,
+        # so check the count here.
+        steps = sum(len(r.get("results", [])) for r in load_records(args.output))
         if steps == 0:
-            print("\n  WARNING: the run completed but produced ZERO steps. Most "
+            print("\n  WARNING: the session completed but produced ZERO steps. Most "
                   "likely\n  the prompt specified an output format the results "
-                  "parser rejects,\n  or --max-new-tokens cut the list off. The "
-                  "platform now logs a\n  warning for the former — check "
-                  f"{endpoint}/agents/instances/{agent_id}/logs")
-        show(saved)
-    if verdict == "failed":
-        sys.exit(f"run failed — full log: "
-                 f"{endpoint}/agents/instances/{agent_id}/logs")
+                  "parser rejects,\n  or --max-new-tokens ran out before the answer.")
+        show(args.output)
+    if verdict != "completed":
+        sys.exit(f"session {verdict} — {api.sessions_url(session_id)}/events")
 
 
 if __name__ == "__main__":
