@@ -166,8 +166,14 @@ gave the README's prod manual exactly: 16 steps over 14–138 s, content md5
 `866909a9315bce0e493db7ab1627749d` (the same as
 `reference/mga-output-i2JWkDyg26A-20261027-PROD-16steps.json`), so `evaluate.py`
 scores it the same: 11/11 reference steps at IoU ≥ 0.3, 7/11 at IoU ≥ 0.5, mean IoU
-0.56. The session took 10.6 minutes from opening to `run completed`. Serving has not
-been rerun on the new lifecycle yet.
+0.56. The session took 10.6 minutes from opening to `run completed`.
+
+Serving was rerun on 2026-11-06: `python3 sweep_serve.py --clips tire_i2JWkDyg26A
+--out-dir eval_serving_lc2` gave a manual byte-identical to the bundle-era serving
+output in `eval_serving/` (md5 `42b5df13021d7296e4fde677726a0954`): 15 steps over
+14–138 s, 9/11 reference steps at IoU ≥ 0.3, 6/11 at IoU ≥ 0.5, mean IoU 0.57 over
+matched steps. The serving deployment took 881 s to start and the query 27.8 s;
+the run took 911 s in all, against 768 s with a bundle.
 
 ## Moving your own scripts
 

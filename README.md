@@ -214,8 +214,9 @@ is what holds the GPU worker; `--keep` leaves both running for `--session ses_â€
 > **Measured on dev, with bundles.** Everything in this section was measured on dev
 > on 2026-10-27 and -28, on a serving *instance* of the `mga` bundle, when agent
 > serving was available on dev only. The query and its answer are unchanged on a
-> session; `sweep_serve.py` no longer refuses other endpoints, but serving there is
-> not measured here.
+> session: rerun on 2026-11-06 with a serving deployment, the tire clip's manual came
+> back byte-identical. `sweep_serve.py` no longer refuses other endpoints, but serving
+> there is not measured here.
 
 Its limits, as measured then:
 
