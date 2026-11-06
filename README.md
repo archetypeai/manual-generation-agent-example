@@ -9,8 +9,15 @@ timestamped manual, and score it against ground truth.
 > Everything else in this README was measured on **dev** between 2026-08-10 and
 > 2026-08-27, against dev's `mga` blueprint, which is not the one prod runs, except
 > [Serving on dev](#serving-on-dev-load-once-one-query-per-clip-or-chunk-2026-10-27)
-> (2026-10-27 and -28, **dev only**: agent serving is not on prod as of 2026-10-28): one
+> (2026-10-27 and -28, on **dev**, where agent serving was then available): one
 > model load for many videos, and 90 s chunks for videos up to 10 minutes.
+
+> **Agent Lifecycle 2.0:** the scripts run on projects, packages, deployments and
+> sessions; bundles and instances are being removed from the platform. A run's
+> `max_frames`, `max_new_tokens` and `prompt` are now set on a copy of `mga` in the
+> project `MGA CrossTask`, one copy per setting (`mga-f64-t16384-pc647bb`), and each
+> video is a session on that copy's deployment. The results below were measured with
+> bundles. What changed, and how to move your own scripts: [MIGRATION.md](MIGRATION.md).
 
 The scenario: a 2:53 roadside tire-change video with **11 documented reference
 steps**. A developer wants a manual good enough that someone could follow it, and
@@ -45,8 +52,12 @@ cp .env.example .env           # add ATAI_API_KEY and ATAI_API_ENDPOINT
 python3 run_mga_example.py
 ```
 
-It fetches the video, uploads it, creates a bundle, runs the agent, streams the
-audit log, downloads the manual and prints it. **~15 minutes.**
+It fetches the video, uploads it, finds or makes the agent for this setting (a copy
+of `mga` with the values set, its package and a batch deployment, once per setting),
+opens a session on it, polls its status and `/events`, downloads the manual and
+prints it. **~15 minutes.** `state/lifecycle.json` (gitignored) records every id, and
+`python3 cleanup.py --yes` deletes the sessions, deployments and packages afterwards
+(see [Cleanup](#cleanup)).
 
 **`ffmpeg` is not optional.** The sample clip's best format is separate video and
 audio streams, and yt-dlp needs ffmpeg to mux them. Without it yt-dlp downloads
@@ -72,7 +83,7 @@ Two settings decide whether that works, and both have silent failure modes:
 
 | | send | if you get it wrong |
 |---|---|---|
-| `max_new_tokens` | **16384** (the blueprint default) | below ~16k the run returns an EMPTY manual, reported as success |
+| `max_new_tokens` | **16384** (the blueprint now defaults to 8192) | below ~16k the run returns an EMPTY manual, reported as success |
 | `prompt` | say what to COVER, never how to format | a format-specifying prompt makes the parser return zero steps |
 
 Why those numbers, what the instruction is worth, and how the same clip scored on
@@ -99,16 +110,17 @@ need has twice been configuration the blueprint did not expose:
 | when | the control out of reach | consequence | now |
 |---|---|---|---|
 | 2026-08-07 | `max_new_tokens` (hardcoded 256) | manual truncated at 6 steps, cut mid-clause | **fixed** — settable, default 16384 |
-| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps, 3.2 actions bundled into each | **fixed** 2026-08-12 — PLDEV-1730 |
+| 2026-08-11 | `prompt` (hardcoded instruction) | capped at 10 steps, 3.2 actions bundled into each | **fixed** 2026-08-12 |
 
 Both are fixed today. The lesson is not either individual defect but that it
-happened twice in five days, silently both times — a value the blueprint does not
-wire is accepted with HTTP 201 and echoed straight back at you.
+happened twice in five days, silently both times — a value the blueprint did not
+wire was accepted on a bundle with HTTP 201 and echoed straight back at you.
 
-So read Stage 3 as the general case rather than a bug report about one value: the
-platform accepts any `values` you send and silently ignores the ones the blueprint
-does not wire, so **the first thing worth doing on any run is checking which of your
-settings are real.** The script does that before it spends anything, and on the
+So read Stage 3 as the general case rather than a bug report about one value: a
+bundle accepted any `values` you sent and silently ignored the ones the blueprint did
+not wire, and a blueprint copy, which now takes the values, still accepts a declared
+value that no node references, so **the first thing worth doing on any run is
+checking which of your settings are real.** The script does that before it spends anything, and on the
 current blueprint it reports everything honoured:
 
 ```
@@ -170,7 +182,7 @@ this says prod works at least as well here, not why.
   [narration ablation](#the-narration-ablation-2026-08-27)), so this is the change
   most likely to move timestamps.
 - `max_new_tokens` defaults to **8192**, not 16384. The example sends 16384, so it
-  is unaffected; a bundle that sends nothing gets 8192, which is inside the range
+  is unaffected; a copy that sets nothing gets 8192, which is inside the range
   that returned an EMPTY manual on dev. Not re-measured on prod.
 - `max_frames` is now validated: **1–64**, anything else is rejected when the
   blueprint resolves. `size` is 224–2048 or `null` (source resolution).
@@ -182,7 +194,7 @@ this says prod works at least as well here, not why.
 ## Serving on dev: load once, one query per clip or chunk (2026-10-27)
 
 ```sh
-python3 sweep_serve.py --clips tire_i2JWkDyg26A --repeat 2          # whole clip, one agent
+python3 sweep_serve.py --clips tire_i2JWkDyg26A --repeat 2          # whole clip, one session
 python3 sweep_serve.py --all --chunk 90 --overlap 15 --background   # every clip in 90 s chunks
 python3 merge_chunks.py eval_serving_c90o15                         # stitch per clip, score tire
 python3 sweep_serve.py --dir data/clips-more --all --chunk 90 --overlap 15 \
@@ -191,27 +203,36 @@ python3 merge_chunks.py eval_serving_more_c90o15
 ```
 
 A batch run pays the model download and load on **every** video: 617 s for the tire
-clip on prod, ~7 min of it before the first frame. **Agent serving** runs the same
-`mga` bundle with `{"mode": "serving"}`: the agent loads once, then answers
-`POST /agents/instances/{id}/query` per video in seconds.
+clip on prod, ~7 min of it before the first frame. **Agent serving** deploys the same
+setting's package (the copy of `mga` the batch run uses) as `serving` and opens one
+session on it: the agent loads once, then the session answers
+`POST /agents/sessions/{id}/query` per video in seconds. At the end `sweep_serve.py`
+cancels and deletes the session and stops and deletes the serving deployment, which
+is what holds the GPU worker; `--keep` leaves both running for `--session ses_…`, and
+`cleanup.py` removes them later. The prompt still travels in the query's `query`.
 
-> **Agent serving is available on dev only, as of 2026-10-28.** Not on prod or
-> staging yet: the batch run above is what prod offers. Everything in this section was
-> measured on dev.
+> **Measured on dev, with bundles.** Everything in this section was measured on dev
+> on 2026-10-27 and -28, on a serving *instance* of the `mga` bundle, when agent
+> serving was available on dev only. The query and its answer are unchanged on a
+> session; `sweep_serve.py` no longer refuses other endpoints, but serving there is
+> not measured here.
 
-Today's limits:
+Its limits, as measured then:
 
-- **One GPU agent at a time on dev.** A second agent fails within a minute with *"no
-  worker is free"*, so `sweep_serve.py` cancels its agent on exit, `kill` and Ctrl-C
-  included, unless `--keep`. Reuse a kept one with `--agent agt_…`: no load at all.
-- **The load is ~11–13 minutes, once, and `/logs` shows it.** Agents took 664–760 s to
+- **One GPU agent at a time on dev.** A second agent failed within a minute with *"no
+  worker is free"*, so `sweep_serve.py` releases its session and serving deployment
+  on exit, `kill` and Ctrl-C included, unless `--keep`. Reuse a kept one with
+  `--session ses_…`: no load at all. A serving session closes after 30 idle minutes,
+  the deployment's default.
+- **The load is ~11–13 minutes, once.** Agents took 664–760 s to
   reach `running` (nine agents, 2026-10-27 and -28; one took 1,696 s while dev was
   unstable). None downloaded anything (*"Using locally available newton-fusion-1-0
   model"*): loading took **10 min 48 s – 12 min 7 s**, against 5 min download + 1 min
-  48 s load in batch. Since 2026-10-28 `/logs` streams the load as it happens
-  (*"Still loading newton-fusion-1-0 model after 4min0s"*, once a minute), then the
-  warm-up and whisper's load, a few seconds together. `sweep_serve.py` prints it.
-  The log is gone once the agent is cancelled.
+  48 s load in batch. From 2026-10-28 an instance's `/logs` streamed the load as it
+  happened (*"Still loading newton-fusion-1-0 model after 4min0s"*, once a minute),
+  then the warm-up and whisper's load, a few seconds together. A session has no
+  `/logs`, only lifecycle `/events`, so the load is again a wait for
+  `status: running`; `sweep_serve.py` prints the events.
 - **The video goes inline and the request is capped at 2 MiB**, about 1.57 MB of video.
   `sweep_serve.py` re-encodes each clip or chunk into `data/clips-serving/` (gitignored),
   best quality first, until the request fits. Frames are resized to 224 px for the
@@ -219,13 +240,13 @@ Today's limits:
   are what it gives up.
 - **Each query has a 58 s budget.** Most queries took 3–14 s, a few 20–28 s (the
   whole tire clip's first, 28.5 s). The first query to a new agent no longer times out:
-  the agent warms its models up before it reports `running` (PLDEV-2432). Over
+  the agent warms its models up before it reports `running`. Over
   2026-10-27 and -28, two of ~150 chunk queries still timed out (504), both
   floating-shelf-long, and both answered on the retry (27.9 s and 18.2 s).
   `sweep_serve.py` retries 5xx three times.
 - **A bad video fails only its own query.** An audio-only mp4 gets `400 … probe failed:
   no video stream`, random bytes `400 … decode failed`, and the agent answers the next
-  query (PLDEV-2480, checked 2026-10-28). Before, one bad input ended the agent and the
+  query (checked 2026-10-28). Before, one bad input ended the agent and the
   next query paid a new load. A 35-frame clip, which used to be such an input, is now
   answered.
 - **A fresh agent can answer differently.** Two queries to one agent gave identical
@@ -346,7 +367,7 @@ floating-shelf-long, where one chunk timed out and was retried). All thirteen on
 agent would take ~11–13 min of load plus ~5 min of answers, **~16–18 min against
 ~2.2 h** in batch. What the table hides: the load is most of every serving run and is
 paid again by every new agent (664–760 s across nine), and the runs above are separate
-agents only because each ended with a cancel; `--keep` and `--agent` chain them on one
+agents only because each ended with a cancel; `--keep` and `--session` chain them on one
 load.
 
 **The videos are not in git** (`data/` is ignored; the thirteen are ~295 MB).
@@ -432,7 +453,7 @@ D is what a hardcoded instruction costs: fixed at *"Generate a concise, ordered
 list of distinct steps with 10 steps or less."*, it was capped at 10 steps by
 wording rather than by content — full write-up in
 [`reference/COMPARISON-prompt-honoured-vs-hardcoded.md`](reference/COMPARISON-prompt-honoured-vs-hardcoded.md).
-`prompt` became settable again on 2026-08-12 (**PLDEV-1730**), and E is the
+`prompt` became settable again on 2026-08-12, and E is the
 result: 18 steps at 1.7 actions each, and 7 of 11 reference steps localised
 within IoU ≥ 0.5 against D's 4.
 
@@ -494,7 +515,8 @@ prompt against E, concluded it was a regression, and was wrong.
 
 ⚠️ **`max_new_tokens` is a floor, not a ceiling.** The model reasons before it
 answers out of the same budget, so below the threshold it never reaches an answer
-and you get `job.completed`, no error row, `results: []`. On this video:
+and you get a completed run (with bundles, `job.completed`), no error row,
+`results: []`. On this video:
 
 | 2048 | 4096 | **16384** | 32768 | 65536 |
 |---|---|---|---|---|
@@ -658,12 +680,8 @@ models, so there is nothing to fit and nothing to upload.
   ```
 
   The `platform.*` endpoints end in `/api` and serve files at `<endpoint>/files`.
-  The legacy `api.*` hosts (e.g. `https://api.dev.u1.archetypeai.app`) served them
-  at `<endpoint>/v0.5/files`; the clients pick the right one from the endpoint, so
-  either works. Dev's new endpoint is `https://platform.dev.u1.archetypeai.app/api`.
-
-  ```
-  ```
+  The legacy `api.*` hosts served them at `<endpoint>/v0.5/files`; the clients pick
+  the right one from the endpoint, so either works.
 
 - **Python 3** — verified on 3.14. Every script here is **stdlib-only**: no
   virtualenv, no install step, no `requirements.txt`.
@@ -757,15 +775,15 @@ This is where MGA's four missing stages went, and where the whole example turns.
 Three values matter; what is broken about them has changed twice.
 
 ```sh
-python3 run_mga_example.py --dry-run     # print the exact payload, call nothing
+python3 run_mga_example.py --dry-run     # print the copy, package, deployment and session bodies, call nothing
 ```
 
-| Value | This example sends | Honoured today? | Notes |
+| Value | This example sets | Honoured today? | Notes |
 |---|---|---|---|
 | `max_frames` | **64** | ✅ | Blueprint default is 16. 64 is the reader/preprocessor batch size, so frames land in one batch. Changes the wording but **not** the outcome — see 3d. |
-| `max_new_tokens` | **16384** | ✅ | Was the first defect (hardcoded **256**, manual truncated). Now settable and the blueprint's own default. It is a **floor**: the model reasons out of this budget, so 2048 and 4096 both return an EMPTY manual on this video while 16384/32768/65536 all returned the same manual. (Step counts from that sweep are 2026-08-13 figures on the previous prompt; the threshold is the durable claim and has not been re-measured since.) |
+| `max_new_tokens` | **16384** | ✅ | Was the first defect (hardcoded **256**, manual truncated). Now settable; the blueprint now defaults to 8192, so the example always sets it. It is a **floor**: the model reasons out of this budget, so 2048 and 4096 both return an EMPTY manual on this video while 16384/32768/65536 all returned the same manual. (Step counts from that sweep are 2026-08-13 figures on the previous prompt; the threshold is the durable claim and has not been re-measured since.) |
 | `size` | not sent (224) | ✅ | Every frame is resized to `size × size` before the model sees it. `null` keeps the source resolution. Untested here; the obvious lever if on-screen text is unreadable. |
-| `prompt` | a detail-oriented instruction | ✅ | Was the second defect: hardcoded to "10 steps or less" between 2026-08-11 and 08-12, so a caller's instruction was accepted and discarded. Wired again as `${values.prompt}` (**PLDEV-1730**). Say what to COVER, never how to format — the results parser owns the template. Rewritten 2026-08-20 after the previous instruction degenerated on a second clip — see [What replaced it](#what-replaced-it-2026-08-20). |
+| `prompt` | a detail-oriented instruction | ✅ | Was the second defect: hardcoded to "10 steps or less" between 2026-08-11 and 08-12, so a caller's instruction was accepted and discarded. Wired again as `${values.prompt}` on 2026-08-12. Say what to COVER, never how to format — the results parser owns the template. Rewritten 2026-08-20 after the previous instruction degenerated on a second clip — see [What replaced it](#what-replaced-it-2026-08-20). |
 
 **Both defects are fixed; the pattern is the point.** Twice in five days the
 setting that decided whether the manual was usable was one the blueprint did not
@@ -773,6 +791,18 @@ expose, and both times the failure was silent — HTTP 201, the value echoed bac
 no effect. The sections below document each for the record, and the preflight in
 the script is the durable lesson: **check which of your values are actually wired
 before spending a run.**
+
+These values go on the project's copy of `mga` (`overrides.values`), not on a
+package or a session, which take none: **each setting is its own copy**, keyed
+`mga-f<frames>-t<budget>-p<prompt>` with the prompt as the first 6 hex of its md5
+(`mga-f64-t16384-pc647bb` for the defaults), made the first time it runs and reused
+after. A copy with no overrides runs at the blueprint's own defaults, which on dev
+(2026-11) are `max_new_tokens` 8192 — between the 4096 that returned an EMPTY manual
+here and the 16384 that did not, and untested — and the instruction *"Generate a
+concise, ordered list of distinct steps with 10 steps or less."*, the ceiling of run D
+in [the evidence ladder](#evidence-what-the-configuration-is-worth). A copy refuses a
+key the blueprint does not declare with a `400`, but accepts one that is declared and
+never referenced, which is what the preflight checks.
 
 ### 3a. The token cap was the whole story  ⏮ HISTORIC — fixed upstream
 
@@ -837,10 +867,10 @@ blueprint, and whether they can be restored.**
 - **`GET /agents/blueprints` only returns `is_active: true` blueprints.** Surveying
   "all 35 node config keys across all 8 blueprints" therefore missed the one
   version that had them.
-- **Blueprints are soft-deprecated, not deleted.** The superseded version still
-  resolves by `blueprint_id`, still accepts new bundles, and still runs. Only the
-  *key* `mga` resolves to the active version. Bundles pin `blueprint_id`, so an
-  existing bundle keeps working when a new version becomes active.
+- **Blueprints are soft-deprecated, not deleted** (measured with bundles). The
+  superseded version still resolved by `blueprint_id`, still accepted new bundles,
+  and still ran. Only the *key* `mga` resolves to the active version. Bundles pinned
+  `blueprint_id`, so an existing bundle kept working when a new version became active.
 
 ### 3b. What the model does when the cap is lifted  ⏮ HISTORIC — needs `prompt`
 
@@ -981,8 +1011,10 @@ or advice as steps"* — which is untested.
 python3 run_mga_example.py
 ```
 
-Upload → create a bundle → run → stream `/logs` → download → print. **~10 minutes
-on prod**: 617 s on 2026-10-27, of which 5 min 4 s downloading newton-fusion,
+Upload → find or make the agent for this setting (a copy of `mga` with the values
+set, its package and a batch deployment, once per setting) → open a session → poll
+its status and `/events` → download → print. **~10 minutes on prod**: 617 s on
+2026-10-27 (with bundles), of which 5 min 4 s downloading newton-fusion,
 1 min 48 s loading it, and 3 min 13 s processing the 173 s clip. Nothing is cached
 between runs, so every run pays the load. (Dev took ~15 minutes.)
 **Run one at a time.** Dev looked like it serialised jobs — four submissions once
@@ -991,12 +1023,12 @@ three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
 
 > ### The defaults target the `mga` KEY — and why that matters
 >
-> `run_mga_example.py` sends `"blueprint": "mga"`, not an id. A key resolves to
-> whatever is canonical and active; a pinned id does not survive republication, and
-> `mga` was republished three times in the week of 2026-08-11.
+> `run_mga_example.py` copies from the key `mga` (`POST /agents/blueprints/mga/copy`),
+> not an id. A key resolves to whatever is canonical and active; a pinned id does not
+> survive republication, and `mga` was republished three times in the week of 2026-08-11.
 >
-> A superseded id fails **late and quietly**: reading it works, the bundle returns
-> `201 ready`, `/run` returns `202 running`, and then the pod dies one second in
+> With bundles, a superseded id failed **late and quietly**: reading it worked, the
+> bundle returned `201 ready`, `/run` returned `202 running`, and then the pod died one second in
 > with `resolving blueprint: invalid config for 1 node(s)`. This example used to
 > default to such an id — `blp_76kyqm…`, pinned to reach `max_new_tokens` and
 > `prompt` before they were exposed — and every run failed until it was switched
@@ -1015,8 +1047,9 @@ three concurrent pods and one was SIGKILLed mid-load (`exit=137`).
 > `--show` recognises the reference digests and tells you which run you are looking
 > at, including the empty one.
 
-The same five calls in raw HTTP, for integrating without the Python — sending what
-the script sends, including the `prompt`. Each call has a way to get it wrong; all
+The same calls in raw HTTP, for integrating without the Python — sending what the
+script sends, including the `prompt`. Steps 2–5 happen once per setting and are
+reused by every later run at it; steps 6–8 are one run. Each call has a way to get it wrong; all
 of them are explained in
 [Platform behavior worth knowing](#platform-behavior-worth-knowing):
 
@@ -1029,35 +1062,63 @@ curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
   -F "file=@clip.mp4;filename=clip-20260813T154418Z-410f.mp4;type=video/mp4" \
   "$ATAI_API_ENDPOINT/files"          # legacy api.* hosts: $ATAI_API_ENDPOINT/v0.5/files
 
-# 2. bundle            (/bundles is PLURAL; no artifacts map for mga)
-#    SEND A PROMPT. Omit it and the blueprint's own instruction applies —
-#    "…with 10 steps or less" — which halves the manual. Say what to COVER,
-#    never how to format: the parser owns the output template.
+# 2. project           (once; or reuse one of yours from GET $ATAI_API_ENDPOINT/projects)
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
-  "$ATAI_API_ENDPOINT/agents/bundles" -d '{
-    "blueprint": "mga",
-    "values": {
+  "$ATAI_API_ENDPOINT/projects" -d '{
+    "name": "MGA CrossTask", "description": "Manual Generation on CrossTask videos"
+  }'
+
+# 3. copy of mga       (the values go HERE; no artifacts map for mga)
+#    SET ALL THREE. A copy with no overrides runs at the blueprint's defaults:
+#    max_new_tokens 8192 and "…with 10 steps or less", which halves the manual.
+#    Say what to COVER, never how to format: the parser owns the output template.
+#    An undeclared key is a 400; a blueprint_key already in the project is a 409.
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/blueprints/mga/copy" -d '{
+    "project_id": "<prj_… from step 2>",
+    "blueprint_key": "mga-f64-t16384-pc647bb",
+    "overrides": {"values": {
       "max_frames": 64,
       "max_new_tokens": 16384,
       "prompt": "Generate an ordered list of every distinct step performed in this video, in order. Include brief steps and steps that are repeated. Write each step as a direct, actionable instruction, as if telling the reader what to do. Do not narrate or describe what is happening in the video. Capture the details needed to repeat the action exactly: control and part names, printed and on-screen text quoted word for word, part numbers, model and serial numbers, tool types and sizes, quantities, and which way things move. For every component being handled, state where it is using grid terms such as top-left, top-right, bottom-left, bottom-right, center-left, or upper-center. Where several similar actions are performed, such as four screws on one panel, treat each as its own step and say what distinguishes it. Where the video shows how to tell the step worked, say that. Base every step on what is visible; use the spoken narration where there is any, and rely on the picture alone where the video is silent. Each step must describe a different action from the one before it — where two moments look alike, state what changed between them. Do not invent steps, parts, or details that are not shown or stated in the video."
-    }
+    }}
   }'
 
-# 3. run               (returns 202, not 201)
+# 4. package           (no values; its models are resolved once. Poll
+#                       GET …/agents/packages/$PACKAGE_ID until status is ready)
 curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
-  "$ATAI_API_ENDPOINT/agents/bundles/$BUNDLE_ID/run" -d '{
+  "$ATAI_API_ENDPOINT/agents/packages" -d '{
+    "blueprint_ids": ["<blp_… of the copy>"], "target": {"kind": "platform"},
+    "name": "MGA mga-f64-t16384-pc647bb"
+  }'
+
+# 5. batch deployment  (ready at once)
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/deployments" -d '{"package_id": "<pkg_…>", "kind": "batch"}'
+
+# 6. session           (one per video; takes no values — a batch session given values is a 422)
+curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" -H "Content-Type: application/json" \
+  "$ATAI_API_ENDPOINT/agents/sessions" -d '{
+    "deployment_id": "<dpl_…>",
     "connectors": {"source": [{"type": "file", "id": "<the file_id you uploaded>",
                                "format": "mp4"}]}
   }'
 
-# 4. watch             (/logs, not /events; the status field lies both ways)
+# 7. watch             (status: pending → running → completed | failed | cancelled, with
+#                       error; /events is newest first and there is no /logs)
+curl -H "Authorization: Bearer $ATAI_API_KEY" "$ATAI_API_ENDPOINT/agents/sessions/$SESSION_ID"
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
-  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/logs?limit=500"
+  "$ATAI_API_ENDPOINT/agents/sessions/$SESSION_ID/events?limit=100"
 
-# 5. results           (ref is relative, resolves under $ATAI_API_ENDPOINT, needs the token)
+# 8. results           (ref is a ROOT path, /api/files/<fil_…>/content, which already
+#                       includes /api: resolve it against the endpoint WITHOUT its /api)
 curl -H "Authorization: Bearer $ATAI_API_KEY" \
-  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/results"
+  "$ATAI_API_ENDPOINT/agents/sessions/$SESSION_ID/results"
+curl -H "Authorization: Bearer $ATAI_API_KEY" "${ATAI_API_ENDPOINT%/api}/api/files/<fil_…>/content"
 ```
+
+A completed session can still carry an empty manual (`results: []`), so count the
+steps in what you download.
 
 ### What a run produces
 
@@ -1236,7 +1297,7 @@ Worth contrasting with the sibling `tva` example, where raising the budget turne
 correct answer into no answer. Same knob, opposite direction, because the failure
 modes differ: MGA ran out of room before finishing its reasoning; TVA had room to
 rehearse a verdict twelve times and lose it. **Neither "raise it" nor "lower it" is
-the lesson — measure it on your own input, and read the parser's warning.**
+the lesson — measure it on your own input, and count the steps it returns.**
 
 ### 3. Recall rewards the manual you would not want
 
@@ -1272,8 +1333,8 @@ does a colleague running the same file.
 ### 5. Nothing about an empty run looks broken
 
 `status: ready`, HTTP `202`, `running` → `completed`, no ERROR row, and a 38-byte
-output containing `{"id": "…", "results": []}`. Every signal says success. The one
-thing that distinguishes it is a `WARN` in `/logs`:
+output containing `{"id": "…", "results": []}`. Every signal says success. With
+bundles, the one thing that distinguished it was a `WARN` in the run's `/logs`:
 
 ```
 WARN parser.running  ManualGenerationResultsParserNode: generation ended inside the
@@ -1282,14 +1343,16 @@ WARN parser.running  ManualGenerationResultsParserNode: generation ended inside 
 
 That warning did not exist a week ago, and without it an empty manual was
 indistinguishable from a working one. **Count the steps in every output before you
-trust a run**, and treat `/logs` as the only honest channel — the `status` field
-lies in both directions.
+trust a run.** With bundles, `/logs` was the only honest channel and the instance
+`status` field lied in both directions; a session has no `/logs`, only lifecycle
+`/events`, and an empty run still ends `completed`, so counting the steps is now the
+only check.
 
 ### 6. Target the blueprint key; a pinned id fails late and quietly
 
-`mga` was republished **three times in the week of 2026-08-11**. A superseded id
-still reads back, still creates a bundle (`201 ready`), still starts a run
-(`202 running`) — and then the pod dies one second in with `resolving blueprint:
+`mga` was republished **three times in the week of 2026-08-11**. With bundles, a
+superseded id still read back, still created a bundle (`201 ready`), still started a
+run (`202 running`) — and then the pod died one second in with `resolving blueprint:
 invalid config for 1 node(s)`. This example defaulted to such an id and every run
 failed until it was switched back to the key. **Reading a blueprint back
 successfully tells you nothing about whether a run against it will resolve.**
@@ -1334,30 +1397,40 @@ does but this example does not.
 
 ## Platform behavior worth knowing
 
-- **Reference a blueprint by KEY, not by id.** Both endpoints accept either, and a
-  key resolves to whatever is canonical and active. A pinned id fails *after* the
-  `202`, at pod start — see [lesson 6](#6-target-the-blueprint-key-a-pinned-id-fails-late-and-quietly).
-- **A run can complete successfully and return nothing** — `job.completed`, no
-  ERROR row, `results: []`. Count the steps in every output; see
+- **Reference a blueprint by KEY, not by id.** The copy call takes either
+  (`POST /agents/blueprints/{key or id}/copy`), and a key resolves to whatever is
+  canonical and active. With bundles, a pinned id failed *after* the `202`, at pod
+  start — see [lesson 6](#6-target-the-blueprint-key-a-pinned-id-fails-late-and-quietly).
+- **A run can complete successfully and return nothing** — the session ends
+  `completed` with no `error` and the manual is `results: []` (with bundles:
+  `job.completed`, no ERROR row). Count the steps in every output; see
   [lesson 5](#5-nothing-about-an-empty-run-looks-broken).
-- **The bundle endpoint is plural.** `POST /agents/bundle` → **404**; use
-  `POST /agents/bundles`. The clients committed in the RED and OSM example repos
-  use the singular form and **fail against current dev**.
-- **Starting a run returns 202, not 201.** Treat only 201 as success and you will
-  report a failure while the agent runs unattended, burning GPU with nothing
-  collecting its output.
-- **Poll `/logs`, not `/events`.** `GET /agents/instances/{id}/logs` is the stream
-  the console shows — model load timings, per-input progress, the real error.
-  `/events` returns only "run started" and "dispatched to JOS".
-- **The instance `status` field lies in both directions.** It stayed `running`
-  20+ minutes after a pod terminated with `exit=1`, and `running` after a job had
-  completed. Judge terminality from the log stream.
-- **Values are accepted whether or not they do anything.** A key absent from the
-  blueprint's `values`, or present but never referenced as `${values.<key>}`, is
-  stored on the bundle and silently ignored. `nodes` overrides are dropped outright.
+- **A package, a deployment and a batch session take no values.** Set them on the
+  blueprint copy (`POST /agents/blueprints/mga/copy` with `overrides.values`), one copy
+  per setting. A batch session given `values` is refused with a `422`. A serving
+  query still carries the prompt as `query`, as it did on an instance.
+- **A session has `/events` and `/results`, not `/logs`.** `/events` (newest first)
+  carries the session's lifecycle — opened, dispatched, failed with a reason — not
+  the model-load timings or the parser's warnings a bundle run's `/logs` carried.
+- **A session's result `ref` is a root path**, `/api/files/<fil_…>/content`, which
+  already includes `/api`. Appending it to an endpoint that ends in `/api` gives
+  `/api/api/…` and a 404; `mga_api.fetch_ref()` resolves it against the root.
+- **The instance `status` field lied in both directions** (measured with bundles). It
+  stayed `running` 20+ minutes after a pod terminated with `exit=1`, and `running`
+  after a job had completed; terminality was judged from the log stream. The scripts
+  poll a session's `status` instead; whether it has the same flaw is not yet measured.
+- **Values are accepted whether or not they do anything.** A bundle stored a key
+  absent from the blueprint's `values`, or present but never referenced as
+  `${values.<key>}`, and silently ignored it; `nodes` overrides were dropped outright.
+  A copy now refuses the first with a `400`, but still accepts the second.
+- **Bundle-era, for reference:** the bundle endpoint was plural (`POST /agents/bundle`
+  → 404, which the clients then committed in the RED and OSM example repos called),
+  starting a run returned 202, not 201, and `/logs` rather than `/events` carried the
+  run's progress.
 - **Cold start is ~7.5 min per run and is never cached.** whisper ~35–40 s download
   + ~4 s load; **newton-fusion ~5 min download + 1 min 40 s load**. Consistent
-  across every run. Total wall clock 877–886 s for a 173 s video.
+  across every run. Total wall clock 877–886 s for a 173 s video. (Measured with
+  bundles, on dev; not yet re-measured on sessions.)
 - **Dev does NOT serialize these jobs**, despite appearances. Four concurrent
   submissions once produced queue waits of **799–817 s**, which looked like a
   queue; three concurrent runs on 2026-08-13 instead came up as three concurrent
@@ -1371,14 +1444,16 @@ does but this example does not.
   hit the identical error on **90-second** chunks, clustered at 138–175 s into a
   chunk while other chunks in the same run ran 384–461 s and finished, which looks
   like an inactivity timeout on the generation stream rather than a duration cap.
-- **`max_frames` has no validation at all.** 16, 64, 256, 501, 512, 1024 and `-1`
-  (keep every frame) were all accepted with `status: ready`. The arithmetic ceiling
-  from `preprocessor_max_pixels` (24 Mi at `size: 224`) is 501 frames and the API
-  will not enforce it.
-- **No progress events during processing.** Between `input_started` and the
-  terminal event there are zero log rows across 5–7 minutes — no frame counts, no
-  transcript length, no per-node timing. Neither a failure nor the time spent can
-  be attributed.
+- **`max_frames` had no validation at all** on dev's blueprint in August (measured
+  with bundles). 16, 64, 256, 501, 512, 1024 and `-1` (keep every frame) were all
+  accepted with `status: ready`. The arithmetic ceiling from `preprocessor_max_pixels`
+  (24 Mi at `size: 224`) is 501 frames and the API did not enforce it. Prod's `mga`
+  now rejects anything outside 1–64 ([On prod](#on-prod-2026-10-27)).
+- **No progress events during processing** (measured with bundles). Between
+  `input_started` and the terminal event a run's `/logs` had zero rows across 5–7
+  minutes — no frame counts, no transcript length, no per-node timing. Neither a
+  failure nor the time spent can be attributed. A session's `/events` carries only
+  its lifecycle, so this is unchanged.
 
 ## Where the deployment diverges from the design doc
 
@@ -1392,9 +1467,10 @@ Observations for the author, not defects.
   The doc describes an algorithm that "takes an input instruction and video" and
   mentions passing the SOP at runtime. `mga` still sets `text_extensions: []`, so
   the *input* path stays closed and a text file cannot be supplied — but
-  `default_text` is now `${values.prompt}`, so the instruction is a **bundle
-  value** instead. By contrast `tva` takes its instruction from a `prepare` node.
-  Three shapes for one idea across two blueprints is worth a convention.
+  `default_text` is now `${values.prompt}`, so the instruction is a **blueprint
+  value** instead (set on a bundle then, on a copy of the blueprint now). By
+  contrast `tva` takes its instruction from a `prepare` node. Three shapes for one
+  idea across two blueprints is worth a convention.
 - **Context is not the binding constraint.** The doc motivates its preprocessing
   work by videos overflowing the context window. In practice the constraints are
   the ~5-minute ceiling and the *output* budget — and not because the manual is
@@ -1413,7 +1489,7 @@ quite what was asked for.
 1. ~~**Expose `max_new_tokens` on the active `mga` blueprint.**~~ ✅ **Done.** It is
    settable on the canonical blueprint. This was the single largest quality gain
    measured here: 4/11 → 8/11 reference steps, prompt untouched.
-2. ~~**Expose `prompt`.**~~ ✅ **Done** (PLDEV-1730, 2026-08-12) — and implemented
+2. ~~**Expose `prompt`.**~~ ✅ **Done** (2026-08-12) — and implemented
    exactly as suggested: `text_extensions: []` kept closed, `default_text` changed
    to `${values.prompt}` with the old sentence as the default. Measured gain on
    this clip: action-bundling falls from **3.2 actions per step to 1.7**, and
@@ -1428,7 +1504,7 @@ quite what was asked for.
    any answer is emitted. A default that silently produces nothing is worse than
    one that truncates visibly. 16384 is comfortably above the floor; **please treat
    it as a minimum rather than a tunable**, and consider rejecting sub-floor values
-   at bundle creation instead of after 15 minutes of GPU.
+   when they are set instead of after 15 minutes of GPU.
 4. **Reconsider the default instruction.** Now that `prompt` is settable this only
    affects callers who send none — but they are the ones least likely to know why
    their manual is half the length it could be. "10 steps or less" caps by wording
@@ -1450,6 +1526,7 @@ quite what was asked for.
    run survive 384–461 s — so chunking alone does not avoid it.
 8. **Fix the endpoint drift in the RED and OSM example repos.** Their committed
    clients call `POST /agents/bundle` and fail for anyone following those READMEs.
+   (Moot once bundles are removed.)
 9. **Keep blueprint ids resolvable, or document that they are not.** A pinned id
    stopped working mid-session when the node schema changed under it. Callers who
    followed the obvious advice — pin a version for reproducibility — were the ones
@@ -1466,21 +1543,20 @@ quite what was asked for.
 
 | Path | What it is |
 |---|---|
-| `run_mga_example.py` | **Start here.** Single-file, stdlib-only end-to-end run: upload → bundle → run → watch `/logs` → download → print. Warns about values the blueprint will ignore. |
-| `repro_truncation.py` | Historic: a minimal reproduction of the 256-token truncation, reporting each symptom as CONFIRMED / NOT REPRODUCED. The cap it targets is fixed upstream, so it no longer reproduces anything; kept because `--analyse` still reads a committed output offline and its wired-value preflight is a working regression check. |
+| `run_mga_example.py` | **Start here.** One video end to end: upload → the setting's agent (copy of `mga`, package, batch deployment) → a batch session → poll its status and `/events` → download → print. Warns about values the blueprint will ignore. `--dry-run` prints the copy, package, deployment and session bodies and calls nothing. |
+| `mga_project.py` | The project `MGA CrossTask`, a copy of `mga` per setting (`mga-f64-t16384-pc647bb`) and its package and deployments, found or made and reused; every session recorded in `state/lifecycle.json` (gitignored) the moment it is opened. |
+| `cleanup.py` | Deletes the sessions, deployments and packages recorded in `state/`; lists them first, `--yes` to delete. The project and its copies of `mga` stay. |
+| `repro_truncation.py` | Historic: a minimal reproduction of the 256-token truncation, reporting each symptom as CONFIRMED / NOT REPRODUCED. The cap it targets is fixed upstream, so it no longer reproduces anything; kept because `--analyse` still reads a committed output offline and its wired-value preflight is a working regression check. Its live mode still creates bundles, so it does not run on a deployment of the platform that has removed them. |
 | `blueprints/mga-tuned.yaml` | The blueprint that restores `max_new_tokens` and the instruction as bundle values. Needs an admin to register. |
 | `reference/` | The three committed run outputs (A, B, C) plus a snapshot of the active blueprint document. |
 | `evaluate.py` | Scores an output against CrossTask: reference-step recall, IoU at several thresholds, advisories and unmatched predictions counted separately. Offline. `--compare` prints the A/B/C ladder. |
-| `mga_api.py` | Shared stdlib client (streaming upload for large videos, network retries, `/logs` polling). |
-| `inspect_bundle.py` | Discovery: dumps a bundle, its blueprint, its runs, their logs and outputs. |
-| `probe_max_frames.py` | Creates bundles across a `max_frames` ladder and optionally runs them. Phase 1 is free. |
-| `watch_runs.py` | Watches runs via `/logs` with log-based terminality. Use rather than polling `status`. |
-| `poll_probe.py` | Attaches to already-launched runs by agent id and compares outputs. |
-| `sweep_serve.py` | Agent serving on dev: one model load, then one query per clip or, with `--chunk`, per chunk. Re-encodes to fit the 2 MiB cap, resumes unanswered chunks, `--background` to detach. |
+| `mga_api.py` | Shared stdlib client: endpoint-aware files prefix, streaming upload for large videos, network retries, blueprint copies, packages, deployments and sessions, session `/events` polling, result refs resolved against the root. |
+| `sweep_serve.py` | Agent serving: one serving deployment and session, one model load, then one query per clip or, with `--chunk`, per chunk. Re-encodes to fit the 2 MiB cap, resumes unanswered chunks, `--keep`/`--session` reuse a loaded session, `--background` to detach. |
 | `merge_chunks.py` | Stitches chunk answers into one manual per clip (`dedupe` and `cut` rules), reports holes, scores tire. Offline. |
 | `fetch_videos.py` | Downloads the serving videos from YouTube into `data/clips/` and `data/clips-more/` and checks their md5. |
 | `background.py` | `--background`: relaunch under `nohup` + `caffeinate`, log to `logs/`; `kill` cleans up like Ctrl-C. |
 | `eval_serving*/` | Serving outputs: whole-clip tire, and the 90 s chunk answers with their merged manuals. |
+| `MIGRATION.md` | From bundles and instances to projects, packages, deployments and sessions: what changed here, and how to move your own scripts. |
 | `docs/` | The MGA design doc this example implements. |
 
 ## Not yet built
@@ -1529,8 +1605,8 @@ resolving blueprint: invalid config for 1 node(s):
      were unexpected)
 ```
 
-Reading it, creating a bundle against it and submitting a run all still succeed. The
-pod dies one second after it starts. Nothing a caller sends can avoid it, because the
+Reading it, creating a bundle against it and submitting a run all still succeeded
+(with bundles). The pod died one second after it started. Nothing a caller sends can avoid it, because the
 rejected properties are in the blueprint document rather than in the payload.
 
 Two things follow, and both are more general than this repo:
@@ -1555,7 +1631,7 @@ checklist is done:
 | 2 | Track new blueprint versions | ✅ solved by using the key rather than an id |
 | 3 | Re-run and update the expected digest | ✅ `KNOWN_MD5` is the 16-step prod run, measured three times 2026-10-27 on `blp_7vc935…` (was the 20-step dev run of 2026-08-20). It went stale within a week last time; expect to redo this |
 | 4 | Revisit the `--max-new-tokens` default | ✅ 16384 — measured; 4096 returns an empty manual, above 16384 changes nothing |
-| 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12 — **PLDEV-1730** landed. Instruction rewritten 2026-08-20 after it degenerated on a second clip |
+| 5 | Decide what to do about `--prompt` | ✅ honoured again as of 2026-08-12, when the fix landed. Instruction rewritten 2026-08-20 after it degenerated on a second clip |
 | 6–7 | Re-frame the headline and Stage 3 | ✅ both defects fixed; the framing is now the recurring pattern |
 | 8 | Delete this section | ⏳ once the ladder above has been re-run on a second video |
 
@@ -1585,25 +1661,30 @@ why it survives the removal of the walkthrough that used it.
 
 ## Cleanup
 
-Dev has **one GPU** and serializes these jobs, so an abandoned run blocks everyone.
-Cancel anything you are not watching:
+`state/lifecycle.json` (gitignored) records the project, each setting's copy, package
+and deployments, and every session the moment it is opened. `cleanup.py` starts from
+each recorded package, lists its deployments and their sessions, so ones a script
+never got to record are found too, and deletes them in that order — sessions, then
+deployments, then the package, since each holds the next:
 
 ```sh
-# list non-terminal mga runs
-curl -s -H "Authorization: Bearer $ATAI_API_KEY" \
-  "$ATAI_API_ENDPOINT/agents/instances?limit=100" \
-  | python3 -c 'import sys,json; [print(x["id"], x["status"]) for x in json.load(sys.stdin)["data"] \
-      if x.get("blueprint")=="mga" and x["status"] not in ("completed","failed","canceled")]'
-
-# cancel one
-curl -X POST -H "Authorization: Bearer $ATAI_API_KEY" \
-  "$ATAI_API_ENDPOINT/agents/instances/$AGENT_ID/cancel"
+python3 cleanup.py          # list what would be deleted, and what stays
+python3 cleanup.py --yes    # delete it
 ```
 
-Do **not** send `DELETE` to an instance URL expecting a no-op — it returns 204 and
-removes the run. Use `/cancel`.
+A session still going is cancelled and a deployment still up is stopped before it is
+deleted. **A serving deployment holds a GPU worker until it is stopped**, so run this
+after `sweep_serve.py --keep`, or after a sweep that was killed before it could clean
+up. The project and its copies of `mga` stay; the next run at a setting packages its
+copy again. Delete the copies and then the project by hand if you want them gone.
+Downloaded outputs and uploaded videos are not touched.
 
-Bundles are cheap and harmless to leave; runs are not.
+To stop one session by hand, `POST /agents/sessions/$SESSION_ID/cancel`. Do **not**
+send `DELETE` expecting a no-op: it removes the session (with bundles, `DELETE` on an
+instance returned 204 and removed the run the same way).
+
+`state/` belongs to one deployment of the platform: pointing `.env` at another stops
+with a message to move `state/` aside.
 
 ## Data attribution
 
