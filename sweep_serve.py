@@ -13,7 +13,7 @@
 
     python3 sweep_serve.py --all --chunk 90 --overlap 15 --dry-run   # cut, print the plan
     python3 sweep_serve.py --all --chunk 90 --overlap 15
-    python3 merge_chunks.py eval_serving_c90o15      # stitch the chunks per rule, score each
+    python3 merge_chunks.py eval_serving             # stitch the chunks per rule, score each
 
 With --chunk, each clip goes as several shorter videos instead of one, and every
 chunk's raw answer is saved to <out-dir>/chunks/<clip>.json for merge_chunks.py.
@@ -30,8 +30,7 @@ run_mga_example.py uses, see mga_project.py) as `serving` and opens one session
 on it: the model loads once and the session answers
 POST /agents/sessions/{id}/query per video.
 
-Limits, as measured with bundles on dev (2026-10-28):
-  - one GPU worker at a time on dev
+Limits:
   - the video goes inline (`"file_ids": ["base64:<mp4>"]`) and the whole body is
     capped at 2 MiB, so every clip is re-encoded to fit, into data/clips-serving/.
     MGA samples 64 frames at 224 px, so frame size and rate can drop a long way;
@@ -71,13 +70,10 @@ BODY_CAP = 2 * 1024 * 1024
 ENCODES = [(360, 15, 30, 32), (360, 8, 32, 24), (240, 5, 32, 24), (180, 4, 34, 16), (144, 2, 36, 16)]
 # A chunk tries the source's own frame size and rate first (None keeps it).
 CHUNK_ENCODES = [(None, None, 23, 64)] + ENCODES
-# A tail chunk with fewer frames than max_frames (64) is mostly an end card. It also
-# used to end the served agent (TVA on dev, 2026-10-26; since fixed).
+# A tail chunk with fewer frames than max_frames (64) is mostly an end card.
 MIN_CHUNK_FRAMES = 64
-# From manual-gen-with-manual-generation-agent (src/lib/prompts.ts), where it is
-# prepended to every chunk of a split video; here, to every chunk after the first.
-# Without it each chunk is treated as a complete video: on 2026-10-27 the tire
-# clip's first 60 s chunk opened with "Wait for the Toyota logo to appear on the screen".
+# Prepended to every chunk after the first. Without it each chunk is treated as a
+# complete video, with its own introduction and conclusion.
 CHUNK_PREAMBLE = (
     "This video is one segment taken from the middle of a longer recording of a "
     "single continuous procedure. List only the steps performed within this "

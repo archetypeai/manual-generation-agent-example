@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Score MGA output against CrossTask reference annotations. Offline, stdlib only.
 
-    python3 evaluate.py reference/mga-output-i2JWkDyg26A-mf64.json
-    python3 evaluate.py --compare reference/*             # the whole ladder
+    python3 evaluate.py data/mga-output.json
+    python3 evaluate.py --compare reference/*.json        # batch and serving
     python3 evaluate.py out.json --video i2JWkDyg26A --task 40567
 
-MGA writes ONE JSON DOCUMENT per run. Both .json and the older .jsonl files in
-reference/ are read.
+MGA writes one JSON document per run (.jsonl files are read too).
 
 No API key, no network, no GPU: it reads output files you already have. Reference
 intervals for the example video are embedded, so it works on a fresh clone; point
@@ -104,8 +103,8 @@ def load_annotations(key: str, path: str | None, annotator: int | None):
     per: dict[int, list[tuple[float, float]]] = {}
     for s, a, b in rows:
         per.setdefault(s, []).append((a, b))
-    # Merge to one interval per step: earliest start, latest end. This is the
-    # design-doc-neutral choice and it is deliberately generous — see the
+    # Merge to one interval per step: earliest start, latest end. This is
+    # deliberately generous — see the
     # docstring's note on annotator disagreement.
     return {s: (min(a for a, _ in v), max(b for _, b in v)) for s, v in per.items()}
 
@@ -260,8 +259,7 @@ def main() -> None:
     if args.annotator is not None:
         print(f"scoring against annotator {args.annotator} only")
 
-    # `reference/*.json` also matches committed blueprint documents and other
-    # non-outputs, so skip anything without a `results` key rather than dying on
+    # Skip anything without a `results` key rather than dying on
     # the first one. Named explicitly, so a typo is not silently ignored.
     scorable = []
     for f in sorted(files):
@@ -274,11 +272,8 @@ def main() -> None:
             print(f"skipping {os.path.basename(f)}: not an MGA output")
             continue
         # An output for a DIFFERENT video scores as nonsense rather than as an
-        # error: the reference procedure is per-task, so a mouse-assembly manual
-        # silently comes back "4/11 reference steps" against the tire annotations.
-        # `reference/` holds outputs for more than one clip, and `--compare
-        # reference/*.json` is the documented way to reproduce the ladder, so this
-        # has to be caught here rather than left to the reader.
+        # error: the reference procedure is per-task, so another video's manual
+        # would silently score against the tire annotations.
         rid = str(rec.get("id", ""))
         if rid and args.video not in rid:
             print(f"skipping {os.path.basename(f)}: id {rid!r} is not "

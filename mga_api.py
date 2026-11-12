@@ -4,17 +4,11 @@
 Shared by run_mga_example.py, sweep_serve.py and cleanup.py. Auth and endpoint come from the environment, with a local .env loaded if
 present: ATAI_API_KEY, ATAI_API_ENDPOINT.
 
-Adapted from the RED example's red_api.py. Two things differ, both because MGA
-takes video rather than a sensor CSV:
+Uploads infer their Content-Type from the file extension and stream from disk, so
+a large video is never held in memory. MGA is zero-shot: nothing is fitted, so
+there is no optimization, promotion or artifact.
 
-  * uploads infer their Content-Type from the file extension, and stream from
-    disk rather than buffering — a 200 MB video read into a bytes literal is a
-    400 MB resident set once the multipart body is assembled.
-  * there is no fitted-artifact path. MGA V1 is zero-shot: the design doc states
-    there are no build-time optimization steps, so nothing is ever fitted and no
-    s3:// artifact is ever pinned into a bundle.
-
-The Agent Lifecycle 2.0: a copy of `mga` in a project, with this run's values
+Agent Lifecycle 2.0: a copy of `mga` in a project, with this run's values
 set on it, is packaged (its models resolved once), the package is deployed as
 `batch` or `serving`, and work runs in sessions on the deployment. A batch
 session is one run over one video; a serving session answers `/query` until it
@@ -63,9 +57,8 @@ def api_base() -> str:
 def files_root() -> str:
     """Where the files API and run-output refs resolve.
 
-    The platform.* endpoints (`https://platform[.dev].u1.archetypeai.app/api`)
-    serve files at `<endpoint>/files`; the legacy api.* hosts served them at
-    `<endpoint>/v0.5/files`. /agents is at `<endpoint>/agents` on both.
+    An endpoint ending in /api serves files at `<endpoint>/files`; an older one
+    without it, at `<endpoint>/v0.5/files`.
     """
     endpoint = api_base()
     return endpoint if endpoint.endswith("/api") else f"{endpoint}/v0.5"
@@ -257,9 +250,8 @@ def copy_blueprint(source: str, project_id: str, key: str, values: dict,
                    name: str | None = None) -> dict:
     """POST /agents/blueprints/{source}/copy with `values` set in the copy.
 
-    This is where a bundle's `values` went. A copy takes `overrides.values`, each
-    of which must be one the blueprint declares (an undeclared key is a 400, unlike
-    a bundle, which stored it and ignored it). `mga` fits nothing, so any of its
+    A copy takes `overrides.values`, each of which must be one the blueprint
+    declares (an undeclared key is a 400). `mga` fits nothing, so any of its
     values may be overridden. The copy lands in `project_id` under `key`; a key
     already in use there is a 409.
     """
@@ -331,8 +323,7 @@ def deployment_ready(deployment_id: str, timeout_s: int = 900) -> dict:
 def open_session(deployment_id: str, video_file_id: str | None = None) -> dict:
     """A batch session over one video, or a serving session with none.
 
-    The video goes in `connectors.source` exactly as a bundle run took it. MGA
-    takes no text input: the instruction is the copy's `prompt` value."""
+    The video goes in `connectors.source`. MGA takes no text input: the instruction is the copy's `prompt` value."""
     body = {"deployment_id": deployment_id}
     if video_file_id:
         body["connectors"] = {"source": [{"type": "file", "id": video_file_id, "format": "mp4"}]}
@@ -350,8 +341,7 @@ def poll_session(session_id: str, timeout_s: int = 3600, interval_s: int = 20) -
     Returns the final status (`completed`, `failed`, `cancelled`), or `timeout`.
 
     A session has no /logs, only /events: what the platform records about the
-    session (opened, dispatched, failed with a reason), not the model-load timings
-    and parser warnings a bundle run's /logs carried. A manual that came back
+    session (opened, dispatched, failed with a reason). A manual that came back
     empty still ends `completed`, so count its steps.
     """
     seen: set[str] = set()

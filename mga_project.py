@@ -13,15 +13,13 @@ sweep for serving — are opened by the caller and recorded here with
 record_session() BEFORE anything waits on them, so cleanup.py finds a session
 whose client died.
 
-WHY A COPY PER SETTING. A bundle carried `values`; a package, a deployment and a
-batch session carry none (a batch session refuses them with a 422). The one place
+WHY A COPY PER SETTING. A package, a deployment and a batch session carry no values (a batch session refuses them with a 422). The one place
 left to set them is the blueprint, and a copy into a project takes
 `overrides.values`. So each setting is its own copy, named after its values (the
 prompt by the first 6 hex of its md5), and reused by every later run at that
-setting. A plain copy would run at the blueprint's own defaults, which on dev
-(2026-11) are max_new_tokens 8192 and the instruction "Generate a concise, ordered
-list of distinct steps with 10 steps or less." — the ~10-step ceiling this example
-works around (see run_mga_example.py).
+setting. A plain copy would run at the blueprint's own defaults: max_new_tokens
+8192 and the instruction "Generate a concise, ordered list of distinct steps with
+10 steps or less.", which caps the manual at 10 steps.
 
 State goes to state/lifecycle.json, for one deployment of the platform: pointing
 .env at another one stops with a message to move state/ aside. A lock serialises

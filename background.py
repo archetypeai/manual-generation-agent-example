@@ -2,17 +2,15 @@
 
 The relaunched run survives closing the terminal (nohup), and on macOS `caffeinate -i -w`
 keeps the Mac from idle-sleeping until it ends. Output goes to a log file. Stdlib only.
-Adapted from the LARCO quickstart's prep/background.py.
 
     ap = argparse.ArgumentParser(...)
     add_background_flag(ap, default_log="logs/sweep_serve.log")
     args = ap.parse_args()
     maybe_detach(args)          # returns only in the foreground run
 
-Two differences from LARCO's: caffeinate watches the run (`-w <pid>`) instead of wrapping
-it, so the pid printed is the Python process and `kill <pid>` reaches it; and SIGTERM is
-raised as KeyboardInterrupt, so `kill` takes the same cleanup path as Ctrl-C. That matters
-here: a run killed without cleanup leaves a serving agent on dev's only GPU.
+caffeinate watches the run (`-w <pid>`), so the pid printed is the Python process and
+`kill <pid>` reaches it, and SIGTERM is raised as KeyboardInterrupt, so `kill` takes the
+same cleanup path as Ctrl-C: a run killed without cleanup leaves a serving deployment up.
 """
 import os
 import shutil

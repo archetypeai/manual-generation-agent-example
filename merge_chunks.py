@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Stitch sweep_serve.py --chunk answers into one manual per clip, per rule, and score the tire clip.
 
-    python3 merge_chunks.py eval_serving_c90o15
-    python3 merge_chunks.py eval_serving_c90o15 --rules dedupe
+    python3 merge_chunks.py eval_serving
+    python3 merge_chunks.py eval_serving --rules dedupe
 
 Every chunk's steps come back in chunk time, and a step inside an overlap comes
-back from both chunks. The merge follows manual-gen-with-manual-generation-agent
-(src/lib/server/merge.ts), where it was tuned on hour-long recordings:
+back from both chunks. The merge:
 
   1. A chunk is dropped whole when it loops (6+ steps, under 34% of them
      distinct), or when every step has zero length: its clock is lost, and its
-     steps would pile up at the chunk's start. merge.ts's floor of 12 steps
-     missed a 20 s tail that said "Press the 'Enter' key." 11 times.
+     steps would pile up at the chunk's start.
   2. A step whose chunk-local time runs past the chunk (+5 s) is dropped, not
      clamped: the model has lost track of the video.
   3. The rest move to clip time. Frames are recomputed at the source clip's rate,
