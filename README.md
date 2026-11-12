@@ -13,11 +13,13 @@ timestamped manual, and score it against ground truth.
 > model load for many videos, and 90 s chunks for videos up to 10 minutes.
 
 > **Agent Lifecycle 2.0:** the scripts run on projects, packages, deployments and
-> sessions; bundles and instances are being removed from the platform. A run's
+> sessions; bundles and instances have been removed from the platform. A run's
 > `max_frames`, `max_new_tokens` and `prompt` are now set on a copy of `mga` in the
 > project `MGA CrossTask`, one copy per setting (`mga-f64-t16384-pc647bb`), and each
 > video is a session on that copy's deployment. The results below were measured with
-> bundles. What changed, and how to move your own scripts: [MIGRATION.md](MIGRATION.md).
+> bundles; rerun on prod with the new calls on 2026-11-12, batch and serving each gave
+> the same manual byte for byte. What changed, and how to move your own scripts:
+> [MIGRATION.md](MIGRATION.md).
 
 The scenario: a 2:53 roadside tire-change video with **11 documented reference
 steps**. A developer wants a manual good enough that someone could follow it, and

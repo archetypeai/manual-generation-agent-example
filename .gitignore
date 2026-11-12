@@ -47,3 +47,4 @@ logs/
 
 # Lifecycle 2.0 ids: the project, copies, packages, deployments and sessions
 state/
+state-*/
