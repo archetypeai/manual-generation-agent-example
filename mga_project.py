@@ -93,8 +93,7 @@ def setting_key(values: dict, source: str = "mga") -> str:
 
 def _project(state: dict) -> str:
     if "project" not in state:
-        found = [p for p in api.request("GET", f"{api.api_base()}/projects?limit=1000")["data"]
-                 if p["name"] == PROJECT]
+        found = [p for p in api.list_all(f"{api.api_base()}/projects") if p["name"] == PROJECT]
         state["project"] = found[0]["id"] if found else api.request(
             "POST", f"{api.api_base()}/projects",
             body={"name": PROJECT, "description": "Manual Generation on CrossTask videos"})["id"]
@@ -120,7 +119,9 @@ def agent(values: dict, kind: str, source: str = "mga") -> dict:
         rec = state["settings"].setdefault(key, {"source": source, "values": values})
 
         if not rec.get("blueprint") or not _alive(f"{api.agents_base()}/blueprints/{rec['blueprint']}"):
-            found = api.request("GET", f"{api.agents_base()}/blueprints?project_id={project}&key={key}")["data"]
+            found = [b for b in api.request(
+                "GET", f"{api.agents_base()}/blueprints?project_id={project}&key={key}")["data"]
+                if b.get("blueprint_key") == key]
             if found:
                 rec["blueprint"] = found[0]["id"]
                 log(f"reusing {key} ({rec['blueprint']})")
@@ -132,16 +133,9 @@ def agent(values: dict, kind: str, source: str = "mga") -> dict:
             rec.pop("package", None)
             save_state(state)
 
-        pkg = _alive(api.packages_url(rec["package"])) if rec.get("package") else None
-        if not pkg or pkg["status"] not in ("ready", "building"):
-            pkg = api.create_package(rec["blueprint"], f"MGA {key}")
-            rec["package"] = pkg["id"]
-            for k in ("batch", "serving"):
-                rec.pop(k, None)
-            save_state(state)
-            log(f"package {pkg['id']} building (models resolved once) ...")
-        if pkg["status"] != "ready":
-            api.package_ready(rec["package"])
+        if rec.get("package") and not _alive(api.packages_url(rec["package"])):
+            rec.pop("package")                     # deleted by cleanup.py
+        api.ready_package(rec, rec["blueprint"], f"MGA {key}", lambda: save_state(state), log)
 
         dpl = _alive(api.deployments_url(rec[kind])) if rec.get(kind) else None
         if not dpl or dpl["status"] not in ("ready", "deploying"):

@@ -554,6 +554,7 @@ def main() -> None:
     print(f"\nsession {verdict}")
 
     payload = api.fetch_results(session_id)
+    steps = 0
     if payload is not None:
         # The output `id` comes from the uploaded name; put the video's own stem back.
         payload = normalise_id(payload, os.path.splitext(os.path.basename(args.video))[0])
@@ -573,6 +574,8 @@ def main() -> None:
         show(args.output)
     if verdict != "completed":
         sys.exit(f"session {verdict} — {api.sessions_url(session_id)}/events")
+    if steps == 0:                       # `completed` does not mean there is a manual
+        sys.exit(f"session {session_id} completed without a manual")
 
 
 if __name__ == "__main__":
