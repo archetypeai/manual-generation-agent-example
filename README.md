@@ -174,6 +174,13 @@ another, move it aside.
 | `mga_api.py`, `mga_project.py` | The API client and the project, copy, package and deployment bookkeeping. |
 | `background.py` | `--background` for `sweep_serve.py`. |
 | `reference/` | The verified batch and serving manuals. |
+| `LICENSE` | Apache License 2.0, for the code. |
+
+## Licence
+
+The code is under the [Apache License 2.0](LICENSE). The annotations and step lists
+come from CrossTask (BSD-3-Clause), and the video is copyrighted by its uploader and
+isn't included: see [Data attribution](#data-attribution).
 
 ## Data attribution
 
