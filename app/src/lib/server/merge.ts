@@ -90,6 +90,7 @@ export function mergeChunks(
 			notes.push({
 				kind: 'check',
 				...where,
+				flag: 'timing',
 				text: `${g.all ? 'Every step is' : 'Most steps are'} ${g.length} s long, so these times are a grid, not a reading of the video. Check these steps against the footage.`
 			});
 		for (const r of c.rows) {
@@ -138,7 +139,8 @@ export function mergeChunks(
 
 	// Near misses: overlapping steps from different chunks, a little short of the bar.
 	for (const [i, a] of rows.entries())
-		for (const b of rows.slice(i + 1)) {
+		for (const [j, b] of rows.entries()) {
+			if (j <= i) continue;
 			if (b.timestamp_start - a.timestamp_start > NEAR_S) break;
 			const overlap =
 				Math.min(a.timestamp_end, b.timestamp_end) - Math.max(a.timestamp_start, b.timestamp_start);
@@ -148,6 +150,8 @@ export function mergeChunks(
 					kind: 'check',
 					start: a.timestamp_start,
 					end: Math.max(a.timestamp_end, b.timestamp_end),
+					flag: 'duplicate',
+					steps: [i, j], // a step's uid is its index here (see pipeline)
 					text: `"${a.instruction}" and "${b.instruction}" may describe the same action. Keep one if they do.`
 				});
 		}

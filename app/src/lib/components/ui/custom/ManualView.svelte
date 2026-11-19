@@ -88,19 +88,52 @@
 		}
 	}
 
-	const notes = $derived(
-		run.warnings.map((w) =>
+	// Notes from older runs carry no flag or step ids: recover them from the text.
+	const byText = $derived(new Map((run.steps ?? []).map((st) => [st.instruction, st.uid])));
+	function normalise(w: Note | string): Note {
+		const n: Note =
 			typeof w === 'string'
-				? {
-						kind: /check|dropped|failed|no audio/i.test(w) ? ('check' as const) : ('info' as const),
-						text: w
-					}
-				: w
-		)
-	);
+				? { kind: /check|dropped|failed|no audio/i.test(w) ? 'check' : 'info', text: w }
+				: { ...w };
+		const pair = n.text.match(/^"(.+)" and "(.+)" may describe the same action/);
+		if (pair && !n.steps) {
+			const ids = [byText.get(pair[1]), byText.get(pair[2])];
+			if (ids.every((u) => u !== undefined)) n.steps = ids as number[];
+			n.flag = 'duplicate';
+		}
+		if (!n.flag && n.start !== undefined && /a grid, not a reading/.test(n.text)) n.flag = 'timing';
+		return n;
+	}
+	const notes = $derived(run.warnings.map(normalise));
 	const checks = $derived(notes.filter((n) => n.kind === 'check'));
 	const infos = $derived(notes.filter((n) => n.kind === 'info'));
 	const seekable = $derived(run.status === 'completed' && Boolean(run.steps));
+
+	/** The badge each step gets from the check notes; a possible duplicate wins over timing. */
+	const flags = $derived.by(() => {
+		// Built fresh on every change, so a plain Map is fine.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
+		const out = new Map<number, 'timing' | 'duplicate'>();
+		for (const n of checks) {
+			if (n.flag === 'duplicate') for (const u of n.steps ?? []) out.set(u, 'duplicate');
+			else if (n.flag === 'timing')
+				for (const st of run.steps ?? [])
+					if (st.timestamp_start >= n.start! && st.timestamp_start < n.end! && !out.has(st.uid))
+						out.set(st.uid, 'timing');
+		}
+		return out;
+	});
+	const stepNo = (uid: number) => {
+		const i = kept.findIndex((d) => d.uid === uid);
+		return i < 0 ? 'removed' : String(i + 1);
+	};
+	function focusStep(uid: number) {
+		document.getElementById(`step-${uid}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		const st = byUid.get(uid);
+		if (!st) return;
+		time = st.timestamp_start;
+		paused = false;
+	}
 
 	const chunksDone = $derived(run.chunks?.filter((c) => c.steps !== null).length ?? 0);
 </script>
@@ -157,7 +190,18 @@
 		<ul class="list-disc pl-4">
 			{#each list as n, i (i)}
 				<li>
-					{#if n.start !== undefined && n.end !== undefined}
+					{#if n.steps?.length && seekable}
+						<Button
+							variant="link"
+							size="inline"
+							class="normal-case"
+							aria-label={`Go to step ${stepNo(n.steps[0])}`}
+							onclick={() => focusStep(n.steps![0])}
+						>
+							Steps {n.steps.map(stepNo).join(' and ')}
+						</Button>
+						·
+					{:else if n.start !== undefined && n.end !== undefined}
 						{#if seekable}
 							<Button
 								variant="link"
@@ -241,7 +285,7 @@
 				{#each drafts as d (d.uid)}
 					{@const s = byUid.get(d.uid)!}
 					{@const n = kept.indexOf(d)}
-					<li>
+					<li id={`step-${d.uid}`} class="scroll-my-4">
 						<Card.Root
 							class={cn(
 								'gap-0 py-0',
@@ -275,6 +319,11 @@
 										<span class="font-mono text-xs text-muted-foreground">
 											{fmt(s.timestamp_start)}–{fmt(s.timestamp_end)}
 										</span>
+										{#if flags.get(d.uid) && !d.removed}
+											<Badge variant="status" size="sm" class="text-atai-warning">
+												{flags.get(d.uid) === 'duplicate' ? 'Possible duplicate' : 'Check timing'}
+											</Badge>
+										{/if}
 										<Button
 											variant={d.removed ? 'ghost' : 'destructiveIcon'}
 											size="icon"

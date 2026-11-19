@@ -21,7 +21,16 @@ export type Probe = {
 };
 
 /** `check`: something to verify before downloading; `info`: how the video was processed. */
-export type Note = { kind: 'check' | 'info'; text: string; start?: number; end?: number };
+export type Note = {
+	kind: 'check' | 'info';
+	text: string;
+	start?: number;
+	end?: number;
+	/** What the steps it points at should be marked with: their times, or a possible duplicate. */
+	flag?: 'timing' | 'duplicate';
+	/** uids of the steps it is about. */
+	steps?: number[];
+};
 
 export type RunStatus =
 	'queued' | 'preparing' | 'waiting' | 'generating' | 'finishing' | 'completed' | 'failed';
