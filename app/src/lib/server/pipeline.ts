@@ -106,16 +106,11 @@ async function process(id: string, key: string) {
 			const problem = pieces.length > 1 && rows ? chunkProblem(rows) : null;
 			let found = rows?.length ?? null;
 			if (problem && (problem !== 'grid' || p.hasAudio)) {
-				recut.push({
-					kind: 'info',
-					start: piece.offset,
-					end: piece.offset + piece.duration,
-					text: `Came back ${PROBLEM[problem]}, so it was sent again as two shorter halves.`
-				});
+				const span = { start: piece.offset, end: piece.offset + piece.duration };
 				await update({
 					phase: `Chunk ${i + 1} came back ${PROBLEM[problem]}; sending it as two halves`
 				});
-				found = 0;
+				const parts: ChunkAnswer[] = [];
 				for (const [k, [o, d]] of halves(piece.offset, piece.duration).entries()) {
 					const prompt = o ? `${CHUNK_PREAMBLE} ${run.prompt}` : run.prompt;
 					const out = path.join(work, `chunk${String(i).padStart(2, '0')}${'ab'[k]}.mp4`);
@@ -124,10 +119,30 @@ async function process(id: string, key: string) {
 						await cutWindow(run.videoFile, p, o, d, prompt, out);
 						half = await queryManual(key, await readFile(out), prompt);
 					} catch {
-						/* this half has no steps; the merge notes it */
+						/* this half has no steps */
 					}
-					answers.push({ offset: +o.toFixed(3), duration: +d.toFixed(3), rows: half });
-					found += half?.length ?? 0;
+					parts.push({ offset: +o.toFixed(3), duration: +d.toFixed(3), rows: half });
+				}
+				// Halves that loop or come back empty would drop the whole stretch. When the
+				// original only had made-up times, its text is still worth more: keep it, flagged.
+				const lost = parts.some(
+					(h) => !h.rows?.length || ['loop', 'no-clock'].includes(chunkProblem(h.rows) ?? '')
+				);
+				if (lost && problem === 'grid') {
+					answers.push({ offset: piece.offset, duration: piece.duration, rows });
+					recut.push({
+						kind: 'info',
+						...span,
+						text: `Came back ${PROBLEM[problem]}. Sent again as two shorter halves, which came back worse, so the first answer is kept.`
+					});
+				} else {
+					answers.push(...parts);
+					found = parts.reduce((n, h) => n + (h.rows?.length ?? 0), 0);
+					recut.push({
+						kind: 'info',
+						...span,
+						text: `Came back ${PROBLEM[problem]}, so it was sent again as two shorter halves.`
+					});
 				}
 			} else answers.push({ offset: piece.offset, duration: piece.duration, rows });
 			if (pieces.length > 1) {
@@ -144,7 +159,7 @@ async function process(id: string, key: string) {
 		else {
 			const merged = mergeChunks(answers, p.fps || 30);
 			raw = merged.steps;
-			warnings.push(...recut, ...merged.notes);
+			warnings.push(...recut, ...merged.notes.sort((x, y) => (x.start ?? 0) - (y.start ?? 0)));
 			for (const a of answers.filter((x) => x.rows === null))
 				warnings.push({
 					kind: 'check',
