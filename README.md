@@ -18,6 +18,12 @@ MGA is zero-shot: the `mga` blueprint brings its own models, so there is nothing
 fit and no data to prepare. You set three values, run it on a video, and read the
 manual.
 
+## The app
+
+[`app/`](app/) is a web app built on the same flow: upload any procedure video, the
+agent runs in serving, and you edit the steps and download a PDF manual. See
+[`app/README.md`](app/README.md).
+
 ## Verified on production
 
 Run against `https://platform.u1.archetypeai.app/api` on 2026-11-12:
